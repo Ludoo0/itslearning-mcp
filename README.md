@@ -12,7 +12,7 @@ MCP-Server, der KI-Agenten **lesenden** Zugriff auf ein itslearning-Konto gibt �
 | M1 | Grundgerüst, Config, Login/Refresh, `list_courses`, `list_tasks`, `get_task`, stdio | ✅ |
 | M2 | Personen-Registry, Lehrkräfte-Verzeichnis, `overview`, `list_news`, `list_bulletins`, `list_message_threads`, `get_message_thread` | ✅ |
 | M3 | `list_course_files`, `download_file` (Textextraktion PDF/DOCX, Cache), fileRefs in Aufgaben/Nachrichten/Ankündigungen | ✅ |
-| M4 | HTTP-Transport, Docker, Smoke-Test | ⏳ |
+| M4 | HTTP-Transport mit API-Key, Docker, Smoke-Test | ✅ |
 
 ## Voraussetzungen
 
@@ -80,7 +80,35 @@ claude mcp add itslearning \
   -- bun run /pfad/zu/itslearning-mcp/src/server.ts
 ```
 
-Docker-Betrieb folgt mit Meilenstein 4.
+## Betrieb mit Docker (HTTP)
+
+```powershell
+# 1. Secrets anlegen (secrets/ ist von Git und vom Docker-Build ausgeschlossen)
+Copy-Item -Recurse secrets.example secrets
+#    → secrets/itsl_username, secrets/itsl_password, secrets/mcp_api_key mit echten Werten füllen
+#    API-Key erzeugen:
+bun -e "console.log(crypto.randomUUID().replaceAll('-','') + crypto.randomUUID().replaceAll('-',''))"
+
+# 2. Starten (ITSL_BASE_URL aus der Umgebung – oder aus der .env, die Compose automatisch liest)
+$env:ITSL_BASE_URL = "https://meineschule.itslearning.com"
+docker compose up -d --build
+docker compose ps        # Status "healthy"
+```
+
+- Server: `http://127.0.0.1:3000/mcp` (nur lokal gebunden; für Zugriff von außen einen Reverse-Proxy mit TLS davorsetzen), Health-Check: `/healthz`.
+- Jeder Request braucht `Authorization: Bearer <mcp_api_key>`.
+- Container: Alpine, User `bun` (kein root), Dateisystem read-only bis auf `/data` (Volume `itsl-data`) und `/tmp`, alle Capabilities entfernt.
+- Login-Status, Lehrkräfte-Verzeichnis und Datei-Cache liegen im Volume – getrennt von `.data/` der lokalen Entwicklung.
+- Anrede der Lehrkräfte im Container pflegen: `docker compose exec itslearning-mcp vi /data/teachers.json`
+- Linux-Host: Secret-Dateien müssen für UID 1000 lesbar sein (`sudo chown 1000:1000 secrets/*`), siehe `secrets.example/README.txt`.
+- `docker run … --tmpfs /tmp` aus **Git Bash**: `MSYS_NO_PATHCONV=1` voranstellen, sonst wird der Pfad umgeschrieben.
+
+### In Claude Code einbinden (HTTP)
+
+```bash
+claude mcp add --transport http itslearning http://127.0.0.1:3000/mcp \
+  --header "Authorization: Bearer <mcp_api_key>"
+```
 
 ## Konfiguration
 
@@ -100,6 +128,15 @@ Siehe [`.env.example`](.env.example) und Spec, Abschnitt 3.
 - E-Mail-Adressen, Telefonnummern und itslearning-interne Links (inkl. Download-Tokens) werden entfernt; externe Links bleiben.
 - Tools geben nur ausgewählte Felder zurück, nie die Roh-Antwort der API.
 - **Grenzen:** Namen von Personen, die in keinem Strukturfeld vorkamen (z. B. Eltern), werden in Texten nicht erkannt. Pseudonymisierung ist keine Anonymisierung.
+
+## Smoke-Test gegen die echte Instanz
+
+```bash
+bun run smoke             # ruft jedes Tool einmal auf und prüft alle Ausgaben auf Leaks
+bun run smoke --details   # zeigt Treffer maskiert an (z. B. "S****")
+```
+
+Das Skript holt die echten Namen (eigenes Konto, Unterhaltungen, Neuigkeiten, Kurs-Teilnehmer:innen) direkt über die API und prüft, ob einer davon in einer Tool-Ausgabe auftaucht – dazu Muster für Tokens, Session-URLs und E-Mail-Adressen. **Die Ausgabe enthält nur Zählungen, keine Namen oder Inhalte**, sie kann also geteilt werden. Exit-Code 1 bei Treffern.
 
 ## Entwicklung
 

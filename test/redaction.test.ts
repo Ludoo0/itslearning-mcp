@@ -26,6 +26,38 @@ describe("secrets", () => {
     expect(out).not.toContain("sign=zz");
   });
 
+  test("relative itslearning-Links und ID-Angaben werden entfernt", () => {
+    expect(stripSecretUrls("Profil: /Person/show_person.aspx?PersonId=4711 ansehen")).toBe("Profil: [itslearning-Link] ansehen");
+    expect(stripSecretUrls("siehe main.aspx?CourseID=12&ElementID=3.")).toBe("siehe [itslearning-Link].");
+    expect(stripSecretUrls('{"PersonId": 4711, "personid=12", UserId:5}')).toBe("{[ID], [ID], [ID]}");
+    // keine Fehlalarme bei normalem Text, Dateinamen und externen Links
+    expect(stripSecretUrls("Kapitel 3, Seite 12, Datei blatt.pdf, https://example.org/a.aspx")).toBe(
+      "Kapitel 3, Seite 12, Datei blatt.pdf, https://example.org/a.aspx",
+    );
+  });
+
+  test("URL-kodierte Daten-Blobs werden entfernt, normale Prozentangaben bleiben", () => {
+    expect(stripSecretUrls("Start: %7B%22PersonId%22%3A12345678%2C%22Name%22%3A%22M%C3%BCller%22%7D Ende")).toBe("Start: [kodierte Daten entfernt] Ende");
+    expect(stripSecretUrls("launch?data=%7B%22a%22%3A1%7D")).toBe("[kodierte Daten entfernt]");
+    expect(stripSecretUrls("Rabatt 50% auf 20 % der Fläche, Note 2%")).toBe("Rabatt 50% auf 20 % der Fläche, Note 2%");
+    expect(stripSecretUrls("https://example.org/suche?q=Br%C3%BCche%20und%20Prozent")).toBe("https://example.org/suche?q=Br%C3%BCche%20und%20Prozent");
+  });
+
+  test("externe Links mit kodierten Personendaten in Parametern sind nicht teilbar", () => {
+    const blob = "%7B%22sourcename%22%3A%221234%22%2C%22PersonId%22%3A12345678%7D";
+    expect(isShareableUrl(`https://tool.example/launch?data=${blob}`)).toBe(false);
+    expect(isShareableUrl("https://tool.example/x?ref=userid%3D5")).toBe(false); // ID-Schlüssel im Wert → verdächtig
+    expect(isShareableUrl("https://tool.example/x?q=PersonId")).toBe(false);
+    expect(isShareableUrl("https://example.org/suche?q=Br%C3%BCche%20und%20Prozent")).toBe(true);
+    expect(isShareableUrl(`https://tool.example/x?long=${"a".repeat(300)}`)).toBe(false);
+    expect(isShareableUrl("https://tool.example/x#%7B%22a%22%3A1%7D")).toBe(false);
+    expect(isShareableUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42")).toBe(true);
+
+    const r = new Redactor();
+    expect(r.text(`Tool: https://tool.example/launch?data=${blob}`)).toBe("Tool: [kodierte Daten entfernt]");
+    expect(r.text(`<a href="https://tool.example/launch?data=${blob}">Zum Tool</a>`)).toBe("Zum Tool");
+  });
+
   test("sanitizeErrorText entfernt IDs", () => {
     expect(sanitizeErrorText("CustomerId=1234, PersonId=4711, does not have Read permission")).toBe(
       "CustomerId={n}, PersonId={n}, does not have Read permission",

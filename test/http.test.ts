@@ -1,0 +1,73 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { createServer } from "../src/app";
+import { startHttpServer } from "../src/http";
+import { fakeContext } from "./fixtures";
+
+const KEY = "k".repeat(40);
+let server: ReturnType<typeof startHttpServer>;
+let base: string;
+
+beforeAll(async () => {
+  server = startHttpServer(await fakeContext(), { host: "127.0.0.1", port: 0, apiKey: KEY, createServer });
+  base = `http://127.0.0.1:${server.port}`;
+});
+afterAll(() => server.stop(true));
+
+async function client(key = KEY) {
+  const c = new Client({ name: "http-test", version: "0" });
+  await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${key}` } } }));
+  return c;
+}
+
+describe("HTTP-Transport", () => {
+  test("/healthz ohne Auth, ohne Details", async () => {
+    const res = await fetch(`${base}/healthz`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "ok" });
+  });
+
+  test("unbekannter Pfad → 404", async () => {
+    expect((await fetch(`${base}/admin`)).status).toBe(404);
+  });
+
+  test("ohne / mit falschem API-Key → 401", async () => {
+    const init = { method: "POST", headers: { "content-type": "application/json" }, body: "{}" };
+    expect((await fetch(`${base}/mcp`, init)).status).toBe(401);
+    const wrong = await fetch(`${base}/mcp`, { ...init, headers: { ...init.headers, Authorization: `Bearer ${"x".repeat(40)}` } });
+    expect(wrong.status).toBe(401);
+    expect(wrong.headers.get("www-authenticate")).toContain("Bearer");
+  });
+
+  test("Browser-Origin wird abgelehnt (DNS-Rebinding-Schutz)", async () => {
+    const res = await fetch(`${base}/mcp`, { method: "POST", headers: { Origin: "https://evil.example", Authorization: `Bearer ${KEY}` }, body: "{}" });
+    expect(res.status).toBe(403);
+  });
+
+  test("GET/DELETE auf /mcp → 405 (zustandsloser Modus)", async () => {
+    expect((await fetch(`${base}/mcp`, { headers: { Authorization: `Bearer ${KEY}` } })).status).toBe(405);
+    expect((await fetch(`${base}/mcp`, { method: "DELETE", headers: { Authorization: `Bearer ${KEY}` } })).status).toBe(405);
+  });
+
+  test("MCP-Client: Tools auflisten und aufrufen", async () => {
+    const c = await client();
+    const { tools } = await c.listTools();
+    expect(tools).toHaveLength(10);
+    const res = await c.callTool({ name: "itslearning_list_tasks", arguments: { limit: 2 } });
+    expect(res.isError).toBeFalsy();
+    expect((res.structuredContent as { total: number }).total).toBe(3);
+    await c.close();
+  });
+
+  test("mehrere Clients parallel teilen sich Kontext (Registry bleibt erhalten)", async () => {
+    const [a, b] = await Promise.all([client(), client()]);
+    const [r1, r2] = await Promise.all([
+      a.callTool({ name: "itslearning_list_message_threads", arguments: {} }),
+      b.callTool({ name: "itslearning_overview", arguments: {} }),
+    ]);
+    expect(r1.isError).toBeFalsy();
+    expect(r2.isError).toBeFalsy();
+    await Promise.all([a.close(), b.close()]);
+  });
+});

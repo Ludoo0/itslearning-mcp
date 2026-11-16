@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 /**
  * Einstiegspunkt des itslearning-MCP-Servers.
- * M1: stdio-Transport. Streamable HTTP + API-Key folgen in Meilenstein 4.
+ * MCP_TRANSPORT=stdio (Default, lokale Clients) oder http (Streamable HTTP, z. B. im Docker-Container).
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createApp } from "./app";
+import { createApp, createServer } from "./app";
 import { ConfigError, loadConfig } from "./config";
+import { startHttpServer } from "./http";
 import { log, setLogLevel } from "./log";
 
 async function main() {
@@ -18,22 +19,32 @@ async function main() {
   }
   setLogLevel(cfg.logLevel);
 
-  if (cfg.transport === "http") {
-    log.error("MCP_TRANSPORT=http ist noch nicht implementiert (Meilenstein 4) – bitte MCP_TRANSPORT=stdio verwenden");
-    process.exit(2);
-  }
-
   const { ctx, server } = createApp(cfg);
 
   // Früh anmelden, damit Fehler sofort im Log stehen. Der Server startet trotzdem:
   // Tools melden den Fehler dann strukturiert (und bei falschem Passwort ohne erneuten Login-Versuch).
   ctx.ensureReady().catch(() => {});
 
-  await server.connect(new StdioServerTransport());
-  log.info("itslearning-MCP-Server läuft", { transport: "stdio", instance: cfg.baseUrl });
+  let stop: () => Promise<void>;
+  if (cfg.transport === "http") {
+    const http = startHttpServer(ctx, {
+      host: cfg.host,
+      port: cfg.port,
+      apiKey: cfg.apiKey!, // von loadConfig bei http erzwungen
+      allowedOrigins: cfg.allowedOrigins,
+      createServer,
+    });
+    stop = async () => {
+      await http.stop();
+    };
+  } else {
+    await server.connect(new StdioServerTransport());
+    log.info("itslearning-MCP-Server läuft", { transport: "stdio", instance: cfg.baseUrl });
+    stop = () => server.close();
+  }
 
   const shutdown = async () => {
-    await server.close().catch(() => {});
+    await stop().catch(() => {});
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

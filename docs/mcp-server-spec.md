@@ -71,7 +71,9 @@ Alle Werte kommen aus Umgebungsvariablen. Für Geheimnisse gibt es jeweils eine 
 | `ITSL_PASSWORD` / `_FILE` | ✅ | – | itslearning-Passwort |
 | `ITSL_CLIENT_ID` | | `10ae9d30-1853-48ff-81cb-47b58a325685` | OAuth-Client-ID (öffentliche ID der Mobile-App) |
 | `MCP_TRANSPORT` | | `stdio` (Docker-Image: `http`) | `http` (Streamable HTTP) oder `stdio` |
+| `MCP_HOST` | | `127.0.0.1` (Docker-Image: `0.0.0.0`) | Bind-Adresse für HTTP |
 | `MCP_PORT` | | `3000` | Port für HTTP |
+| `MCP_ALLOWED_ORIGINS` | | leer | Erlaubte Browser-Origins (kommagetrennt); Anfragen mit anderem `Origin`-Header → 403 (DNS-Rebinding-Schutz) |
 | `MCP_API_KEY` / `_FILE` | ✅ bei `http` | – | Bearer-Key, den Clients senden müssen (≥ 32 Zeichen) |
 | `REDACTION_SECRET` / `_FILE` | | auto | HMAC-Secret für Pseudonyme. Fehlt es, wird es einmalig erzeugt und in `/data/secret` gespeichert |
 | `REDACT_TEACHERS` | | `false` | `true` → Lehrkräfte ebenfalls pseudonymisieren (`Lehrkraft-XXXX`) |
@@ -400,13 +402,13 @@ Das eigene Konto (`self`) wird ebenfalls ersetzt (`Ich`), damit der Klarname des
 
 ### 8.1 Transport
 
-- **`http` (Default):** MCP Streamable HTTP unter `POST/GET /mcp`.
+- **`http`:** MCP Streamable HTTP unter `POST /mcp`, **zustandslos** mit JSON-Antworten (kein SSE, keine Sessions; `GET`/`DELETE` → 405). Pro Anfrage ein frischer `McpServer` über dem gemeinsamen Kontext – Login, Caches und Personen-Registry bleiben erhalten. Umgesetzt mit dem Web-Standard-Transport des SDK direkt auf `Bun.serve` (Body-Limit 1 MB).
   - Jeder Request braucht `Authorization: Bearer <MCP_API_KEY>`. Der Vergleich läuft zeitkonstant (`timingSafeEqual`).
   - `GET /healthz` ohne Auth → `200 {"status":"ok"}` (keine Details).
   - Kein TLS im Container. Für Zugriff von außerhalb von localhost: Reverse-Proxy (Caddy/Traefik) mit TLS davor. In der Compose-Vorlage ist der Port standardmäßig an `127.0.0.1` gebunden.
 - **`stdio`:** für lokale Clients über `docker run -i --rm …`. Kein API-Key nötig.
 
-### 8.2 Dockerfile (Skizze)
+### 8.2 Dockerfile (Skizze – umgesetzt in `Dockerfile`: ohne Bundling, da unpdf/mammoth dynamisch geladen werden; Image ~220 MB)
 
 ```dockerfile
 FROM oven/bun:1-alpine AS build
@@ -429,7 +431,7 @@ HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:3000/heal
 CMD ["bun", "dist/server.js"]
 ```
 
-### 8.3 `compose.yaml` (Vorlage)
+### 8.3 `compose.yaml` (Vorlage – umgesetzt in `compose.yaml`, Secrets-Vorlagen in `secrets.example/`)
 
 ```yaml
 services:

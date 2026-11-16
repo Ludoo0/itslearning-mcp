@@ -10,7 +10,9 @@ export type Config = {
   password: string;
   clientId: string;
   transport: "stdio" | "http";
+  host: string;
   port: number;
+  allowedOrigins: string[];
   apiKey?: string;
   redactionSecret?: string;
   redactTeachers: boolean;
@@ -71,7 +73,9 @@ const schema = z.object({
   ITSL_PASSWORD: z.string({ error: "ITSL_PASSWORD fehlt" }),
   ITSL_CLIENT_ID: z.string().default(DEFAULT_CLIENT_ID),
   MCP_TRANSPORT: z.enum(["stdio", "http"]).default("stdio"),
+  MCP_HOST: z.string().default("127.0.0.1"),
   MCP_PORT: intIn(1, 65535).default(3000),
+  MCP_ALLOWED_ORIGINS: z.string().default(""),
   MCP_API_KEY: z.string().min(32, "MCP_API_KEY muss mindestens 32 Zeichen haben").optional(),
   REDACTION_SECRET: z.string().min(16, "REDACTION_SECRET muss mindestens 16 Zeichen haben").optional(),
   REDACT_TEACHERS: boolish.default(false),
@@ -113,7 +117,9 @@ export function loadConfig(env: Env = process.env, readFile: ReadFile = (p) => r
     password: c.ITSL_PASSWORD,
     clientId: c.ITSL_CLIENT_ID,
     transport: c.MCP_TRANSPORT,
+    host: c.MCP_HOST,
     port: c.MCP_PORT,
+    allowedOrigins: c.MCP_ALLOWED_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean),
     apiKey: c.MCP_API_KEY,
     redactionSecret: c.REDACTION_SECRET,
     redactTeachers: c.REDACT_TEACHERS,

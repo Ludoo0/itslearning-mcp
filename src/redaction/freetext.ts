@@ -4,7 +4,7 @@
  */
 
 /** Häufige deutsche Wörter, die auch Namen sind – als Einzelwort nicht ersetzen (Fehlalarme vermeiden). */
-const STOPWORDS = new Set(
+export const STOPWORDS = new Set(
   [
     "mai", "rose", "klein", "groß", "gross", "wolf", "fuchs", "weiß", "weiss", "schwarz", "braun", "lang", "kurz",
     "bach", "berg", "stein", "winter", "sommer", "frank", "ernst", "will", "kaiser", "könig", "koenig", "vogel",

@@ -1,0 +1,36 @@
+# Start:  ITSL_BASE_URL=https://meineschule.itslearning.com docker compose up -d --build
+# Vorher: secrets/ aus secrets.example/ anlegen (siehe secrets.example/README.txt)
+services:
+  itslearning-mcp:
+    build: .
+    image: itslearning-mcp:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"   # nur lokal erreichbar; für Zugriff von außen Reverse-Proxy mit TLS davor
+    environment:
+      ITSL_BASE_URL: ${ITSL_BASE_URL:?ITSL_BASE_URL setzen, z. B. https://meineschule.itslearning.com}
+      ITSL_USERNAME_FILE: /run/secrets/itsl_username
+      ITSL_PASSWORD_FILE: /run/secrets/itsl_password
+      MCP_API_KEY_FILE: /run/secrets/mcp_api_key
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # REDACT_TEACHERS: "true"
+    secrets: [itsl_username, itsl_password, mcp_api_key]
+    volumes:
+      - itsl-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - "no-new-privileges:true"
+
+secrets:
+  itsl_username:
+    file: ./secrets/itsl_username
+  itsl_password:
+    file: ./secrets/itsl_password
+  mcp_api_key:
+    file: ./secrets/mcp_api_key
+
+volumes:
+  itsl-data:

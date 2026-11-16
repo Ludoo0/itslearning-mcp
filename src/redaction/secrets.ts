@@ -15,14 +15,33 @@ export function isItslearningUrl(url: string): boolean {
   }
 }
 
+const ID_KEY_RE = /\b(?:Person|User|Customer|Child|Student|Member)_?Id\b/i;
+const MAX_PARAM_VALUE_LEN = 200;
+
+function safeDecode(s: string) {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * Geheime Parameter-NAMEN oder verdächtige WERTE: JSON/Markup, Personen-IDs, ungewöhnlich lange Werte
+ * (z. B. Startparameter externer Lern-Tools: ?data=%7B%22PersonId%22%3A…%7D).
+ */
 function hasSecretParams(u: URL): boolean {
-  for (const k of u.searchParams.keys()) if (SECRET_PARAM_RE.test(k)) return true;
-  return false;
+  for (const [k, v] of u.searchParams) {
+    if (SECRET_PARAM_RE.test(k)) return true;
+    if (v.length > MAX_PARAM_VALUE_LEN || /[{}"<>]/.test(v) || ID_KEY_RE.test(v)) return true;
+  }
+  const hash = safeDecode(u.hash);
+  return hash.length > MAX_PARAM_VALUE_LEN || /[{}"<>]/.test(hash) || ID_KEY_RE.test(hash);
 }
 
 /**
  * Darf diese URL an einen Agenten gehen?
- * Erlaubt: externe http(s)-Links ohne geheime Query-Parameter. Verboten: alles von *.itslearning.com.
+ * Erlaubt: externe http(s)-Links ohne geheime/verdächtige Query-Parameter. Verboten: alles von *.itslearning.com.
  */
 export function isShareableUrl(url: string): boolean {
   let u: URL;
@@ -37,14 +56,29 @@ export function isShareableUrl(url: string): boolean {
   return !hasSecretParams(u);
 }
 
-/** Ersetzt nicht teilbare URLs in einem Text. Externe, unkritische Links bleiben stehen. */
+/** Relative itslearning-Links in Texten, z. B. "/Person/show_person.aspx?PersonId=123". */
+const RELATIVE_ITSL_PATH_RE = /(?<![\w/.:-])\/?(?:[\w.-]+\/)*[\w.-]+\.(?:aspx|ashx|asmx)(?:\?[^\s<>"'`)\]]*)?/gi;
+/** Interne IDs als Schlüssel/Wert, z. B. "PersonId=123", "personid: 123", "\"PersonId\":123". */
+const ID_PAIR_RE = /["']?\b(?:Person|User|Customer|Child|Student|Member)_?Id["']?\s*[=:]\s*["']?\d+["']?/gi;
+
+/**
+ * URL-kodierte Daten-Blobs (z. B. Startparameter eingebetteter Lern-Tools: "%22PersonId%22%3A123…").
+ * Für Agenten wertlos und potenziell heikel – darin kodierte Namen (%C3%BC …) erkennt das Wörterbuch nicht.
+ */
+const ENCODED_BLOB_RE = /[^\s<>"']*(?:%[0-9a-f]{2}[^\s<>"'%]*){3,}/gi;
+
+/** Ersetzt nicht teilbare URLs (absolut und relativ), kodierte Daten-Blobs sowie interne ID-Angaben. Externe, unkritische Links bleiben stehen. */
 export function stripSecretUrls(text: string): string {
-  return text.replace(URL_IN_TEXT_RE, (raw) => {
-    const url = raw.replace(/[.,;:!?]+$/, "");
-    const tail = raw.slice(url.length);
-    if (isShareableUrl(url)) return raw;
-    return (isItslearningUrl(url) ? "[itslearning-Link]" : "[Link entfernt]") + tail;
-  });
+  return text
+    .replace(ENCODED_BLOB_RE, (raw) => (isShareableUrl(raw) ? raw : "[kodierte Daten entfernt]"))
+    .replace(URL_IN_TEXT_RE, (raw) => {
+      const url = raw.replace(/[.,;:!?]+$/, "");
+      const tail = raw.slice(url.length);
+      if (isShareableUrl(url)) return raw;
+      return (isItslearningUrl(url) ? "[itslearning-Link]" : "[Link entfernt]") + tail;
+    })
+    .replace(RELATIVE_ITSL_PATH_RE, (raw) => "[itslearning-Link]" + (raw.match(/[.,;:!?]+$/)?.[0] ?? ""))
+    .replace(ID_PAIR_RE, "[ID]");
 }
 
 function redactSegment(seg: string): string {
