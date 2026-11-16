@@ -1,10 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { ApiLightBulletin } from "../api/types";
 import type { AppContext } from "../context";
+import { type FileRefDto, formatRef } from "../files/refs";
 import { log } from "../log";
 import type { Person } from "../redaction/registry";
 import { isShareableUrl } from "../redaction/secrets";
-import { registerPublishedBy } from "./people";
+import { registerPublishedBy, warmCourse } from "./people";
 import { handler, ok } from "./result";
 
 const TEXT_LEN = 4_000;
@@ -17,10 +19,21 @@ export type BulletinDto = {
   text: string;
   pinned: boolean;
   link?: string;
-  imageCount: number;
-  resources: { elementId: number; title: string; type: string }[];
+  images: FileRefDto[];
+  resources: { elementId: number; title: string; type: string; fileRef: string }[];
   commentsCount: number;
 };
+
+/** Bilder eines Bulletins → fileRefs (die tokenisierte URL bleibt im FileService). */
+export function bulletinImages(ctx: AppContext, courseId: number | undefined, b: ApiLightBulletin): FileRefDto[] {
+  if (!courseId) return [];
+  return (b.AttachedImages ?? []).flatMap((img, index) => {
+    if (!img?.OriginalFileUrl) return [];
+    const fileRef = formatRef({ kind: "bulletinImage", courseId, bulletinId: b.LightBulletinId, index });
+    ctx.files.remember(fileRef, img.OriginalFileUrl);
+    return [{ fileRef, name: `Bild ${index + 1}`, kind: "image" as const }];
+  });
+}
 
 export const listBulletinsInput = {
   courseId: z.number().int().positive().describe("courseId aus itslearning_list_courses"),
@@ -35,7 +48,7 @@ export async function listBulletins(ctx: AppContext, args: ListBulletinsArgs) {
   const offset = args.offset ?? 0;
   // itslearning paginiert über PageIndex → Offset auf Seiten der Größe `limit` abbilden
   const pageIndex = Math.floor(offset / limit);
-  const res = await ctx.it.courseBulletins(args.courseId, pageIndex, limit);
+  const [res] = await Promise.all([ctx.it.courseBulletins(args.courseId, pageIndex, limit), warmCourse(ctx, args.courseId)]);
   const items = res.EntityArray ?? [];
   for (const b of items) registerPublishedBy(ctx.redactor.people, b.PublishedBy, "teacher-weak");
 
@@ -48,6 +61,7 @@ export async function listBulletins(ctx: AppContext, args: ListBulletinsArgs) {
           elementId: e.ElementId,
           title: ctx.redactor.title(e.Title),
           type: e.ElementType ?? "Unknown",
+          fileRef: formatRef({ kind: "element", elementId: e.ElementId }),
         }));
       } catch {
         log.warn("Bulletin-Ressourcen konnten nicht geladen werden");
@@ -62,7 +76,7 @@ export async function listBulletins(ctx: AppContext, args: ListBulletinsArgs) {
       text: ctx.redactor.text(b.Text, TEXT_LEN),
       pinned: b.Pinned ?? false,
       ...(link ? { link } : {}),
-      imageCount: b.AttachedImages?.length ?? 0,
+      images: bulletinImages(ctx, args.courseId, b),
       resources,
       commentsCount: b.CommentsCount ?? 0,
     });

@@ -76,7 +76,7 @@ Alle Werte kommen aus Umgebungsvariablen. Für Geheimnisse gibt es jeweils eine 
 | `REDACTION_SECRET` / `_FILE` | | auto | HMAC-Secret für Pseudonyme. Fehlt es, wird es einmalig erzeugt und in `/data/secret` gespeichert |
 | `REDACT_TEACHERS` | | `false` | `true` → Lehrkräfte ebenfalls pseudonymisieren (`Lehrkraft-XXXX`) |
 | `TEACHER_ROLE_TITLES` | | `Lehrer,Lehrerin,Lehrkraft,Teacher,Mitarbeiter,Staff` | Werte von `RoleInHierarchyTitle`, die als Lehrkraft gelten ⏳ |
-| `INCLUDE_FILE_TEXT` | | `true` | `itslearning_download_file` extrahiert standardmäßig Text |
+| `DOWNLOAD_DIR` | | – | Optional: heruntergeladene Dateien zusätzlich hier ablegen (geschwärzter Dateiname) |
 | `MAX_FILE_MB` | | `25` | Größere Dateien werden abgelehnt |
 | `CACHE_TTL_S` | | `60` | Gültigkeit des Listen-Caches |
 | `MAX_CONCURRENCY` | | `2` | Parallele Anfragen an itslearning |
@@ -253,22 +253,31 @@ type NewsItem = {
 
 | | |
 |---|---|
-| Eingabe | `{ fileRef: string, includeText?: boolean = INCLUDE_FILE_TEXT, maxTextChars?: number = 50000 }` |
-| Ausgabe | `structuredContent: { name, mimeType, sizeBytes, textTruncated? }` + Content-Blöcke: `resource` (`blob`, base64) und, falls Text verfügbar, `text` (geschwärzt) |
+| Eingabe | `{ fileRef: string, mode?: "auto" | "text" | "blob" | "both" = "auto", maxTextChars?: number = 50000 }` |
+| Ausgabe | `structuredContent: { fileRef, kind, name, mimeType, sizeBytes, cached, textIncluded, textChars?, textTruncated?, blobIncluded, savedTo? }` + Content-Blöcke: Text (geschwärzt) und/oder `image` bzw. `resource` (`blob`, base64) |
+| `mode=auto` | PDF/DOCX/Text → nur geschwärzter Text (Datenschutz-Default, spart Tokens) · Bilder → `image` · sonst → `resource` |
 | Wege | (a) filerepository-URL direkt ✅ · (b) Kurs-Element über Web-Session → `DownloadRedirect.ashx` ✅ · (c) `assignments/{id}/files/{fileId}/v1` ⏳ |
 
-**fileRef-Registry** (`files/registry.ts`):
-- Tools, die Dateien ausgeben, legen einen Eintrag an: `fileRef → { source: "url" | "element" | "assignment", secret: <URL bzw. IDs>, courseId?, elementId?, name }`.
-- `fileRef` = `f_` + HMAC(REDACTION_SECRET, source + Schlüssel), gekürzt. Es ist stabil über Neustarts, ohne dass die URL persistiert wird.
-- Unbekanntes oder abgelaufenes `fileRef` → Fehler `FILE_REF_UNKNOWN` mit Hinweis, das auflistende Tool erneut aufzurufen.
+**fileRefs** (`files/refs.ts`, umgesetzt in M3): Referenzen enthalten nur itslearning-IDs (keine Geheimnisse) und sind **zustandslos auflösbar**, also auch nach einem Neustart gültig:
+
+| fileRef | Quelle | Auflösung |
+|---|---|---|
+| `e_<elementId>` | Kurs-Element | `courses/resources/{id}/v1` → SSO → Web-Session → `DownloadRedirect` |
+| `a_<elementId>_<fileId>` | Aufgaben-Anhang | `assignments/{id}/files/{fileId}/v1` (302) |
+| `m_<threadId>_<messageId>` | Nachrichten-Anhang | `AttachmentUrl` (aus Speicher oder durch erneutes Laden des Threads) |
+| `i_<courseId>_<bulletinId>_<n>` | Bulletin-Bild | `OriginalFileUrl` (aus Speicher oder durch erneutes Laden der Bulletins) |
+
+Die geheimen URLs werden nur im Speicher des FileService gehalten. Ein unbekanntes Format bzw. ein nicht mehr auffindbarer Anhang → `FILE_REF_UNKNOWN`. Der Server nutzt ausschließlich die Rechte des Kontos, ein selbst gebautes fileRef gibt also keinen zusätzlichen Zugriff.
 
 **Verhalten:**
 - Größer als `MAX_FILE_MB` → Fehler `FILE_TOO_LARGE`, ohne Download.
-- Ergebnis ist keine Datei (HTML ohne Download-Link, z. B. Link oder Seite) → `{ kind: "link" | "page", text?: geschwärzter Seitentext }`, aber **keine URL**.
+- Ergebnis ist keine Datei (HTML ohne Download-Link, z. B. Link, Notiz oder Test) → `{ kind: "page", title, text }` mit geschwärztem Seitentext, aber **keine URL**.
+- **Vor dem Download** registriert der Server alle Personen, die im Dokument stehen könnten: Kurs-Teilnehmer:innen (`courses/{id}/participants/v1` ⏳, best effort) bzw. Thread-Teilnehmer:innen.
+- Optional `DOWNLOAD_DIR`: Datei wird zusätzlich als `<fileRef>_<geschwärzter Name>` abgelegt (`savedTo`).
 - Cache: `DATA_DIR/files/<sha256(fileRef)>` + Metadaten; gültig, solange `LastUpdated` des Elements unverändert ist (bei direkten URLs: 24 h).
 - Textextraktion: PDF (`unpdf`), DOCX (`mammoth`), `text/*`, Markdown. Andere Typen nur als Blob. Danach läuft der Text durch die Freitext-Schwärzung (6.4).
 - Dateiname: Wörterbuch-Ersetzung + Regex. Die Endung bleibt erhalten.
-- **Bekannte Grenze:** Den Inhalt der Datei im Blob schwärzt der Server nicht. Eine PDF-Datei kann also Namen enthalten. Das steht in der Tool-Beschreibung, damit der Client bzw. Nutzer das weiß. Mit `INCLUDE_FILE_TEXT=true` und der Option `textOnly: true` (siehe 13) liefert der Server nur den geschwärzten Text.
+- **Bekannte Grenze:** Den Inhalt der Datei im Blob schwärzt der Server nicht. Eine PDF-Datei kann also Namen enthalten. Das steht in der Tool-Beschreibung, damit der Client bzw. Nutzer das weiß. Deshalb liefert `mode=auto` für PDF/DOCX/Text standardmäßig **nur den geschwärzten Text**; die Datei selbst gibt es nur bei Bildern, nicht extrahierbaren Formaten oder ausdrücklich mit `mode=blob|both`.
 
 ---
 
@@ -580,6 +589,5 @@ itslearning-mcp/
 **v2-Ideen:**
 - Eltern-Konten (`children/{childId}/tasks|courses|plans|upcoming`)
 - Kalender-Tool (Endpunkt verifiziert, an der Referenzinstanz leer)
-- `textOnly`-Modus für `download_file` als Default-Option: nur geschwärzter Text, kein Blob
 - Wochenpläne (`planner/v1`, `children/{id}/plans/v1`)
 - Optional: Login über fremde Anbieter mithilfe eines Headless-Browsers

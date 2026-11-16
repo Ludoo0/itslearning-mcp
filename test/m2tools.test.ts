@@ -14,7 +14,7 @@ describe("itslearning_list_news", () => {
     const res = await listNews(ctx, { since: "2026-11-09" });
     expect(res.items.map((i) => i.id)).toEqual([8001, 8002]);
     const [bulletin, element] = res.items;
-    expect(bulletin).toMatchObject({ kind: "bulletin", bulletinId: 6001, imageCount: 1, courseId: 12, author: { display: "Lehrkraft Lindqvist", role: "teacher" } });
+    expect(bulletin).toMatchObject({ kind: "bulletin", bulletinId: 6001, images: [{ fileRef: "i_12_6001_0" }], courseId: 12, author: { display: "Lehrkraft Lindqvist", role: "teacher" } });
     expect(bulletin!.text).toBe("Liebe Klasse, Abgabe bei Lehrkraft Lindqvist. Fragen: [E-Mail]");
     expect(element).toMatchObject({ kind: "element", elementId: 7001, author: { role: "unknown" } });
     expect(element!.text).toMatch(/^Neue Aufgabe: Arbeitsblatt Brüche \(von Person-[0-9A-F]{4}\)$/);
@@ -31,8 +31,8 @@ describe("itslearning_list_bulletins", () => {
     const res = await listBulletins(await fakeContext(), { courseId: 12 });
     expect(res.total).toBe(2);
     const [b1, b2] = res.bulletins;
-    expect(b1).toMatchObject({ pinned: true, link: "https://example.org/info", imageCount: 1, commentsCount: 2 });
-    expect(b1!.resources).toEqual([{ elementId: 7101, title: "Leseliste", type: "LearningToolElement" }]);
+    expect(b1).toMatchObject({ pinned: true, link: "https://example.org/info", images: [{ fileRef: "i_12_6001_0", kind: "image" }], commentsCount: 2 });
+    expect(b1!.resources).toEqual([{ elementId: 7101, title: "Leseliste", type: "LearningToolElement", fileRef: "e_7101" }]);
     expect(b2!.link).toBeUndefined();
     expect(b2!.text).toBe("Siehe [itslearning-Link]");
     expect(b2!.author?.role).toBe("teacher"); // Bulletin-Autor (schwaches Indiz)
@@ -69,7 +69,7 @@ describe("itslearning_get_message_thread", () => {
     const [m499, m500, , m502] = res.messages;
     expect(m499).toMatchObject({ from: { display: "Ich", role: "self" }, text: "Ich bringe es morgen, Lehrkraft Lindqvist." });
     expect(m500).toMatchObject({ deleted: true, text: "" });
-    expect(m502!.attachmentName).toBe("Notizen_Ich_Ich.pdf");
+    expect(m502!.attachment).toEqual({ fileRef: "m_9001_502", name: "Notizen_Ich_Ich.pdf", kind: "file" });
     expect(m502!.link).toEqual({ url: "https://example.org/lernvideo", title: "Lernvideo" });
     expect(res.title).toBe("Lehrkraft Lindqvist");
   });

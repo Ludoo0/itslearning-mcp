@@ -3,6 +3,7 @@ import type { Itslearning } from "./api/endpoints";
 import type { Config } from "./config";
 import { ToolError } from "./errors";
 import { log } from "./log";
+import type { FileService } from "./files/service";
 import type { Redactor } from "./redaction/redactor";
 import { registerThread } from "./tools/people";
 
@@ -21,12 +22,19 @@ export type ItslearningApi = Pick<
   | "bulletinElements"
   | "messageThreads"
   | "threadMessages"
+  | "courseResources"
+  | "folderResources"
+  | "resource"
+  | "ssoUrl"
+  | "assignmentFileLocation"
+  | "courseParticipants"
 >;
 
 export type AppContext = {
-  cfg: Pick<Config, "baseUrl" | "redactTeachers">;
+  cfg: Pick<Config, "baseUrl" | "redactTeachers" | "downloadDir">;
   it: ItslearningApi;
   redactor: Redactor;
+  files: FileService;
   /** Stellt sicher, dass Login + Registrierung des eigenen Kontos erfolgt sind (Voraussetzung für Schwärzung). */
   ensureReady(): Promise<void>;
   now(): Date;
@@ -36,6 +44,7 @@ export function createContext(opts: {
   cfg: AppContext["cfg"];
   it: ItslearningApi;
   redactor: Redactor;
+  files: FileService;
   fetchImpl?: typeof fetch;
   now?: () => Date;
 }): AppContext {
@@ -79,6 +88,7 @@ export function createContext(opts: {
     cfg: opts.cfg,
     it: opts.it,
     redactor: opts.redactor,
+    files: opts.files,
     now: opts.now ?? (() => new Date()),
     ensureReady() {
       if (fatal) return Promise.reject(fatal);

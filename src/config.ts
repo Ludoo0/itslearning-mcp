@@ -15,12 +15,13 @@ export type Config = {
   redactionSecret?: string;
   redactTeachers: boolean;
   teacherRoleTitles: string[];
-  includeFileText: boolean;
   maxFileMb: number;
   cacheTtlS: number;
   maxConcurrency: number;
   minRequestIntervalMs: number;
   dataDir: string;
+  /** Optional: heruntergeladene Dateien zusätzlich hier ablegen (geschwärzter Dateiname). */
+  downloadDir?: string;
   logLevel: "debug" | "info" | "warn" | "error";
 };
 
@@ -75,12 +76,12 @@ const schema = z.object({
   REDACTION_SECRET: z.string().min(16, "REDACTION_SECRET muss mindestens 16 Zeichen haben").optional(),
   REDACT_TEACHERS: boolish.default(false),
   TEACHER_ROLE_TITLES: z.string().default(DEFAULT_TEACHER_ROLE_TITLES),
-  INCLUDE_FILE_TEXT: boolish.default(true),
   MAX_FILE_MB: intIn(1, 500).default(25),
   CACHE_TTL_S: intIn(0, 3600).default(60),
   MAX_CONCURRENCY: intIn(1, 8).default(2),
   MIN_REQUEST_INTERVAL_MS: intIn(0, 10_000).default(200),
   DATA_DIR: z.string().default("/data"),
+  DOWNLOAD_DIR: z.string().optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
@@ -117,12 +118,12 @@ export function loadConfig(env: Env = process.env, readFile: ReadFile = (p) => r
     redactionSecret: c.REDACTION_SECRET,
     redactTeachers: c.REDACT_TEACHERS,
     teacherRoleTitles: c.TEACHER_ROLE_TITLES.split(",").map((s) => s.trim()).filter(Boolean),
-    includeFileText: c.INCLUDE_FILE_TEXT,
     maxFileMb: c.MAX_FILE_MB,
     cacheTtlS: c.CACHE_TTL_S,
     maxConcurrency: c.MAX_CONCURRENCY,
     minRequestIntervalMs: c.MIN_REQUEST_INTERVAL_MS,
     dataDir: c.DATA_DIR,
+    downloadDir: c.DOWNLOAD_DIR,
     logLevel: c.LOG_LEVEL,
   };
 }

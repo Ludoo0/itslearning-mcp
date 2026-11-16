@@ -2,7 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ApiMessage, ApiThread } from "../api/types";
 import type { AppContext } from "../context";
+import { type FileRefDto, formatRef } from "../files/refs";
 import type { Person } from "../redaction/registry";
+import { redactFileName } from "./files";
 import { isShareableUrl } from "../redaction/secrets";
 import { registerMessage, registerThread } from "./people";
 import { handler, ok } from "./result";
@@ -105,12 +107,19 @@ export type MessageDto = {
   edited: boolean;
   deleted: boolean;
   system: boolean;
-  attachmentName?: string;
+  attachment?: FileRefDto;
   link?: { url: string; title?: string };
 };
 
-function toMessageDto(ctx: AppContext, m: ApiMessage): MessageDto {
+function toMessageDto(ctx: AppContext, threadId: number, m: ApiMessage): MessageDto {
   const link = m.Link && isShareableUrl(m.Link) ? { url: m.Link, ...(m.LinkTitle ? { title: ctx.redactor.title(m.LinkTitle) } : {}) } : undefined;
+  let attachment: FileRefDto | undefined;
+  if (m.AttachmentUrl && !m.IsDeleted) {
+    const fileRef = formatRef({ kind: "message", threadId, messageId: m.MessageId });
+    ctx.files.remember(fileRef, m.AttachmentUrl);
+    const name = m.AttachmentName ? redactFileName(ctx, m.AttachmentName) : "Anhang";
+    attachment = { fileRef, name, kind: /\.(png|jpe?g|gif|webp|heic)$/i.test(name) ? "image" : "file" };
+  }
   return {
     messageId: m.MessageId,
     at: m.Created ?? null,
@@ -119,7 +128,7 @@ function toMessageDto(ctx: AppContext, m: ApiMessage): MessageDto {
     edited: m.IsEdited ?? false,
     deleted: m.IsDeleted ?? false,
     system: m.IsSystemMessage ?? false,
-    ...(m.AttachmentName ? { attachmentName: ctx.redactor.title(m.AttachmentName) } : {}), // Download: Meilenstein 3
+    ...(attachment ? { attachment } : {}),
     ...(link ? { link } : {}),
   };
 }
@@ -140,7 +149,7 @@ export async function getThread(ctx: AppContext, args: GetThreadArgs) {
   return {
     threadId: args.threadId,
     ...(meta ? { title: toThreadDto(ctx, meta).title, type: meta.Type ?? "Unknown" } : {}),
-    messages: sorted.map((m) => toMessageDto(ctx, m)),
+    messages: sorted.map((m) => toMessageDto(ctx, args.threadId, m)),
     total,
     hasMore: msgs.length < total,
     ...(msgs.length < total && sorted[0] ? { olderBeforeMessageId: sorted[0].MessageId } : {}),

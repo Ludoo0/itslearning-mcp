@@ -11,7 +11,7 @@ MCP-Server, der KI-Agenten **lesenden** Zugriff auf ein itslearning-Konto gibt �
 |---|---|---|
 | M1 | Grundgerüst, Config, Login/Refresh, `list_courses`, `list_tasks`, `get_task`, stdio | ✅ |
 | M2 | Personen-Registry, Lehrkräfte-Verzeichnis, `overview`, `list_news`, `list_bulletins`, `list_message_threads`, `get_message_thread` | ✅ |
-| M3 | Dateien (Download, Textextraktion, Cache) | ⏳ |
+| M3 | `list_course_files`, `download_file` (Textextraktion PDF/DOCX, Cache), fileRefs in Aufgaben/Nachrichten/Ankündigungen | ✅ |
 | M4 | HTTP-Transport, Docker, Smoke-Test | ⏳ |
 
 ## Voraussetzungen
@@ -36,6 +36,8 @@ bun run call itslearning_list_news limit=10
 bun run call itslearning_list_bulletins courseId=123
 bun run call itslearning_list_message_threads unreadOnly=true
 bun run call itslearning_get_message_thread threadId=123
+bun run call itslearning_list_course_files courseId=123 recursive=true
+bun run call itslearning_download_file fileRef=e_123
 ```
 
 Tipp: `.env.example` nach `.env` kopieren und ausfüllen – Bun lädt sie automatisch, `.env` ist von Git ausgeschlossen.
@@ -44,6 +46,19 @@ In `.data/` liegen danach:
 - `state.json` – Login-Status (rotierender Refresh-Token; das Passwort wird nicht gespeichert)
 - `secret` – Schlüssel für stabile Pseudonyme
 - `teachers.json` – Lehrkräfte-Verzeichnis (siehe unten)
+- `files/` – Datei-Cache (24 h, max. 500 MB)
+
+### Dateien
+
+Tools liefern `fileRef`-Werte (z. B. `e_123` Kurs-Element, `a_1_2` Aufgaben-Anhang, `m_1_2` Nachrichten-Anhang, `i_1_2_0` Bild). `itslearning_download_file` lädt sie:
+
+| `mode` | Ergebnis |
+|---|---|
+| `auto` (Standard) | PDF/DOCX/Text → **geschwärzter Text**; Bilder → Bild; sonst Datei |
+| `text` | nur geschwärzter Text |
+| `blob` / `both` | Datei (bzw. Datei + Text) |
+
+**Wichtig:** Bilder und Dateien (blob) werden inhaltlich nicht geschwärzt – nur extrahierter Text. Mit `DOWNLOAD_DIR` werden Dateien zusätzlich lokal abgelegt.
 
 ### Anrede der Lehrkräfte pflegen
 
@@ -71,7 +86,7 @@ Docker-Betrieb folgt mit Meilenstein 4.
 
 Siehe [`.env.example`](.env.example) und Spec, Abschnitt 3.
 
-## Datenschutz (Stand M2)
+## Datenschutz (Stand M3)
 
 | Wer | Anzeige |
 |---|---|
@@ -81,7 +96,7 @@ Siehe [`.env.example`](.env.example) und Spec, Abschnitt 3.
 | Rolle unbekannt | `Person-7F3A` |
 
 - Pseudonyme sind stabil (HMAC über die PersonId mit lokalem Secret).
-- Namen in Freitexten (Aufgaben, Neuigkeiten, Nachrichten, Thread-Titel, Anhang-Namen) werden über ein Wörterbuch aller bisher gesehenen Personen ersetzt. Beim Start wird es mit den Teilnehmer:innen der neuesten Unterhaltungen vorgefüllt.
+- Namen in Freitexten (Aufgaben, Neuigkeiten, Nachrichten, Thread-Titel, Datei-Namen, extrahierte Datei-Texte) werden über ein Wörterbuch aller bekannten Personen ersetzt. Gefüllt wird es aus: Teilnehmer:innen der neuesten Unterhaltungen (beim Start), Kurs-Teilnehmer:innen (vor Kurs-Inhalten) und allen Personen in API-Antworten.
 - E-Mail-Adressen, Telefonnummern und itslearning-interne Links (inkl. Download-Tokens) werden entfernt; externe Links bleiben.
 - Tools geben nur ausgewählte Felder zurück, nie die Roh-Antwort der API.
 - **Grenzen:** Namen von Personen, die in keinem Strukturfeld vorkamen (z. B. Eltern), werden in Texten nicht erkannt. Pseudonymisierung ist keine Anonymisierung.

@@ -15,9 +15,15 @@ import type {
   ApiThread,
   Paged,
 } from "../src/api/types";
-import type { AppContext, ItslearningApi } from "../src/context";
+import { type AppContext, type ItslearningApi, createContext } from "../src/context";
 import { ToolError } from "../src/errors";
+import { Limiter } from "../src/api/limiter";
+import type { ApiResource } from "../src/api/types";
+import type { FileCache } from "../src/files/cache";
+import { FileService } from "../src/files/service";
 import { Redactor } from "../src/redaction/redactor";
+import { WebBrowser } from "../src/websession/browser";
+import { createFakeWeb, type FakeWeb } from "./fakeWeb";
 
 // ---------- Personen (alle erfunden) ----------
 // 2001 Sabine Lindqvist – Lehrkraft (RoleInHierarchyTitle)
@@ -229,7 +235,7 @@ export const ASSIGNMENTS: Record<number, ApiAssignment> = {
     SubmissionType: "File",
     CompletionMode: "Submission",
     IsSubmissionAfterDeadlineAllowed: false,
-    Files: [{ FileId: 1 }],
+    Files: [{ FileId: 1, FileName: "Brüche_Jonas.txt" }],
     FilesInCloud: [],
     TemplateFile: null,
     Text:
@@ -240,6 +246,15 @@ export const ASSIGNMENTS: Record<number, ApiAssignment> = {
     AnswerId: null,
     CanSubmitOrEditAnswer: true,
   },
+};
+
+const VIEW = (id: number) => `https://demo.itslearning.com/LearningToolElement/ViewLearningToolElement.aspx?LearningToolElementId=${id}`;
+export const RESOURCES: Record<number, ApiResource> = {
+  7300: { ElementId: 7300, Title: "Arbeitsblätter", ElementType: "Folder", CourseId: 11, Path: "Arbeitsblätter" },
+  7201: { ElementId: 7201, Title: "Arbeitsblatt Woche 1", ElementType: "LearningToolElement", CourseId: 11, ContentUrl: VIEW(7201), Homework: true },
+  7202: { ElementId: 7202, Title: "Notiz", ElementType: "LearningToolElement", CourseId: 11, ContentUrl: VIEW(7202) },
+  7203: { ElementId: 7203, Title: "Lösungen", ElementType: "LearningToolElement", CourseId: 11, ContentUrl: VIEW(7201), Path: "Arbeitsblätter/Lösungen" },
+  7101: { ElementId: 7101, Title: "Leseliste", ElementType: "LearningToolElement", CourseId: 12, ContentUrl: VIEW(7201) },
 };
 
 export function fakeApi(overrides: Partial<ItslearningApi> = {}): ItslearningApi {
@@ -263,19 +278,46 @@ export function fakeApi(overrides: Partial<ItslearningApi> = {}): ItslearningApi
       if (threadId !== 9001) throw new ToolError("NOT_FOUND", "Element nicht gefunden.", 404);
       return { Messages: paged(MESSAGES_9001, 0, pageSize) };
     },
+    courseResources: async (courseId) => (courseId === 11 ? [RESOURCES[7300]!, RESOURCES[7201]!, RESOURCES[7202]!] : []),
+    folderResources: async (_c, folderId) => (folderId === 7300 ? [RESOURCES[7203]!] : []),
+    resource: async (id) => {
+      const r = RESOURCES[id];
+      if (!r) throw new ToolError("NOT_FOUND", "Element nicht gefunden.", 404);
+      return r;
+    },
+    ssoUrl: async (target) => `https://demo.itslearning.com/SSO/MobileAppLoginSso.aspx?Signature=SIG-SECRET&ReturnUrl=${encodeURIComponent(target)}`,
+    courseParticipants: async (courseId) =>
+      courseId === 11
+        ? [
+            { PersonId: 3001, FullName: "Mia Sonnenfeld", Role: "Schüler" },
+            { PersonId: 2001, FullName: "Sabine Lindqvist", Role: "Lehrer" },
+          ]
+        : courseId === 12
+          ? [{ PersonId: 2001, FullName: "Lindqvist, Sabine", Role: "Lehrer" }]
+          : Promise.reject(new ToolError("FORBIDDEN", "Kein Zugriff auf dieses Element.", 403)),
+    assignmentFileLocation: async (elementId, fileId) => {
+      if (elementId === 7001 && fileId === 1) return "https://filerepository.itslearning.com/asg1?Token=ASGSECRET";
+      throw new ToolError("NOT_FOUND", "Element nicht gefunden.", 404);
+    },
     ...overrides,
   };
 }
 
-export async function fakeContext(overrides: Partial<ItslearningApi> = {}): Promise<AppContext> {
+export async function fakeContext(
+  overrides: Partial<ItslearningApi> = {},
+  opts: { web?: FakeWeb; cache?: FileCache; maxBytes?: number; downloadDir?: string } = {},
+): Promise<AppContext> {
   const redactor = new Redactor();
   const it = fakeApi(overrides);
-  redactor.registerSelf(await it.person());
-  return {
-    cfg: { baseUrl: "https://demo.itslearning.com", redactTeachers: false },
+  const web = opts.web ?? createFakeWeb();
+  const files = new FileService(it, new WebBrowser(new Limiter(4, 0), web.fetch), { maxBytes: opts.maxBytes ?? 5 * 1_048_576, cache: opts.cache });
+  const ctx = createContext({
+    cfg: { baseUrl: "https://demo.itslearning.com", redactTeachers: false, downloadDir: opts.downloadDir },
     it,
     redactor,
-    ensureReady: async () => {},
+    files,
     now: () => NOW,
-  };
+  });
+  await ctx.ensureReady(); // wie im echten Betrieb: Login + eigenes Konto + Vorwärmen mit Thread-Teilnehmer:innen
+  return ctx;
 }

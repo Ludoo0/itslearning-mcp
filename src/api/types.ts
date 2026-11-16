@@ -153,6 +153,32 @@ export type ApiThread = {
 export type ApiThreadList = { Threads: Paged<ApiThread>; HasMore?: boolean };
 export type ApiThreadMessages = { Messages: Paged<ApiMessage> };
 
+/** Teilnehmer:in eines Kurses (courses/{id}/participants/v1) – laut API-Doku, gegen echte Instanz ⏳. */
+export type ApiCourseParticipant = {
+  PersonId: number;
+  FullName?: string | null;
+  Role?: string | null;
+  RoleId?: number | null;
+};
+
+/** Kurs-Ressource (courses/{id}/resources/v1, folders/{id}/resources/v1, courses/resources/{id}/v1). */
+export type ApiResource = {
+  ElementId: number;
+  Title?: string | null;
+  ElementType?: string | null;
+  CourseId?: number;
+  Url?: string | null;
+  ContentUrl?: string | null;
+  Active?: boolean;
+  Homework?: boolean;
+  Path?: string | null;
+  LearningToolId?: number | null;
+  LearningObjectId?: number | null;
+  LearningObjectInstanceId?: number | null;
+  IsTopicOrPlanFolder?: boolean;
+};
+export type ApiResourceList = { Resources: Paged<ApiResource> };
+
 export type ApiAssignment = {
   ElementId: number;
   Title?: string | null;

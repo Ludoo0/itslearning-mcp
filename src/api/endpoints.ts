@@ -1,13 +1,17 @@
 /** Typisierte Aufrufe der verifizierten Endpunkte (docs/itslearning-api.md). */
+import { ToolError } from "../errors";
 import type { ApiClient } from "./client";
 import type {
   ApiAssignment,
   ApiCourse,
   ApiCourseCard,
+  ApiCourseParticipant,
   ApiElement,
   ApiLightBulletin,
   ApiNotification,
   ApiPerson,
+  ApiResource,
+  ApiResourceList,
   ApiTask,
   ApiThreadList,
   ApiThreadMessages,
@@ -72,6 +76,39 @@ export class Itslearning {
   /** Nachrichten eines Threads (v3). `fromId` für ältere Nachrichten (Semantik ⏳). */
   threadMessages(threadId: number, pageSize: number, fromId?: number): Promise<ApiThreadMessages> {
     return this.api.get(`${P}/instantmessages/messagethreads/{threadId}/messages/v3`, { threadId }, { pageSize, fromId });
+  }
+
+  /** Teilnehmer:innen eines Kurses – nur für das Namens-Wörterbuch (Schwärzung), nie für Ausgaben. */
+  courseParticipants(courseId: number): Promise<ApiCourseParticipant[]> {
+    return this.all<ApiCourseParticipant>(`${P}/courses/{courseId}/participants/v1`, { courseId }, { ttlS: 900 });
+  }
+
+  /** Inhalt des Root-Ordners eines Kurses. */
+  async courseResources(courseId: number): Promise<ApiResource[]> {
+    const res = await this.api.get<ApiResourceList>(`${P}/courses/{courseId}/resources/v1`, { courseId }, { PageIndex: 0, PageSize: PAGE_SIZE });
+    return res.Resources?.EntityArray ?? [];
+  }
+
+  async folderResources(courseId: number, folderId: number): Promise<ApiResource[]> {
+    const res = await this.api.get<ApiResourceList>(`${P}/courses/{courseId}/folders/{folderId}/resources/v1`, { courseId, folderId }, { PageIndex: 0, PageSize: PAGE_SIZE });
+    return res.Resources?.EntityArray ?? [];
+  }
+
+  /** Einzelne Ressource inkl. ContentUrl (Ausgangspunkt für den Download-Flow). */
+  resource(elementId: number): Promise<ApiResource> {
+    return this.api.get<ApiResource>(`${P}/courses/resources/{resourceId}/v1`, { resourceId: elementId });
+  }
+
+  /** Kurzlebige SSO-URL in die Web-Oberfläche (GEHEIM – nie ausgeben/loggen). Nicht cachen. */
+  async ssoUrl(url: string): Promise<string> {
+    const res = await this.api.get<{ Url?: string }>(`${P}/sso/url/v1`, {}, { url }, { ttlS: 0 });
+    if (!res.Url) throw new ToolError("UPSTREAM_ERROR", "itslearning hat keine Anmelde-URL geliefert.");
+    return res.Url;
+  }
+
+  /** Ziel-URL eines Aufgaben-Anhangs (GEHEIM). */
+  assignmentFileLocation(elementId: number, fileId: number): Promise<string> {
+    return this.api.getRedirectLocation(`${P}/assignments/{elementId}/files/{fileId}/v1`, { elementId, fileId });
   }
 
   /** Holt alle Seiten einer Paged-Liste (mit Obergrenze, damit nichts ausufert). */

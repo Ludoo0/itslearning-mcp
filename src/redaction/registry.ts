@@ -4,7 +4,7 @@
  *   self → "Ich" · teacher → "Frau Müller" / "Lehrkraft Müller" · student → "Schüler:in-7F3A" · unknown → "Person-7F3A"
  */
 import { createHmac } from "node:crypto";
-import type { ApiParticipant } from "../api/types";
+import type { ApiCourseParticipant, ApiParticipant } from "../api/types";
 import type { PersonNames } from "./freetext";
 import type { TeacherDirectory } from "./teachers";
 
@@ -91,6 +91,25 @@ export class PersonRegistry {
     const title = clean(p.RoleInHierarchyTitle)?.toLowerCase();
     const hint: RoleHint = !title ? "none" : this.teacherTitles.some((t) => title.includes(t)) ? "teacher" : "student";
     this.register(p.PersonId, { firstName: p.FirstName, lastName: p.LastName, fullName: p.FullName }, hint);
+  }
+
+  /** Kurs-Teilnehmer:in: nur FullName + Rolle (Kurs-Profil) vorhanden → Vor-/Nachname heuristisch trennen. */
+  registerCourseParticipant(p: ApiCourseParticipant) {
+    const full = clean(p.FullName);
+    let firstName: string | undefined;
+    let lastName: string | undefined;
+    if (full?.includes(",")) {
+      [lastName, firstName] = full.split(",", 2).map((s) => s.trim());
+    } else if (full) {
+      const parts = full.split(" ");
+      if (parts.length > 1) {
+        lastName = parts.at(-1);
+        firstName = parts.slice(0, -1).join(" ");
+      }
+    }
+    const role = clean(p.Role)?.toLowerCase();
+    const hint: RoleHint = !role ? "none" : this.teacherTitles.some((t) => role.includes(t)) ? "teacher" : "student";
+    this.register(p.PersonId, { fullName: full, firstName, lastName }, hint);
   }
 
   role(id: number | null | undefined): Role {

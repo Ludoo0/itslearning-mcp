@@ -31,9 +31,34 @@ export class ApiClient {
     private auth: Pick<TokenStore, "getAccessToken" | "invalidate">,
     private fetchImpl: typeof fetch = fetch,
     private sleep: (ms: number) => Promise<void> = (ms) => Bun.sleep(ms),
+    limiter?: Limiter,
   ) {
-    this.limiter = new Limiter(cfg.maxConcurrency, cfg.minRequestIntervalMs, sleep);
+    this.limiter = limiter ?? new Limiter(cfg.maxConcurrency, cfg.minRequestIntervalMs, sleep);
     this.cache = new TtlCache();
+  }
+
+  /**
+   * GET, der einen Redirect erwartet (z. B. Datei-Download): liefert das Ziel aus dem Location-Header,
+   * ohne ihm zu folgen. Das Ziel ist ein Geheimnis (signierte URL) und darf nicht geloggt/ausgegeben werden.
+   */
+  async getRedirectLocation(template: string, params: Record<string, string | number>): Promise<string> {
+    const path = template.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(String(params[k])));
+    const url = new URL(this.cfg.baseUrl + path);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = await this.auth.getAccessToken();
+      const res = await this.limiter.run(() =>
+        this.fetchImpl(url, { redirect: "manual", headers: { Authorization: `Bearer ${token}`, "User-Agent": UA } }),
+      );
+      const loc = res.headers.get("location");
+      if (res.status >= 300 && res.status < 400 && loc) return new URL(loc, url).toString();
+      if (res.status === 401 && attempt === 0) {
+        this.auth.invalidate();
+        continue;
+      }
+      log.warn("Redirect erwartet", { endpoint: template, status: res.status });
+      throw res.ok ? new ToolError("NOT_A_FILE", "Unter dieser Referenz liegt keine Datei.") : mapStatus(res.status);
+    }
+    throw new ToolError("AUTH_FAILED", "Anmeldung bei itslearning fehlgeschlagen.");
   }
 
   /** GET mit JSON-Antwort. `template` (z. B. "/restapi/personal/courses/{courseId}/v1") wird fürs Log verwendet. */

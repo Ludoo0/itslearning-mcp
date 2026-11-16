@@ -53,7 +53,7 @@ describe("itslearning_list_tasks", () => {
 describe("itslearning_get_task", () => {
   test("Details mit geschwärzter Aufgabenstellung", async () => {
     const res = await getTask(await fakeContext(), { elementId: 7001 });
-    expect(res).toMatchObject({ title: "Arbeitsblatt Brüche", detailsUnavailable: false, attachmentCount: 1, canSubmit: true, hasAnswer: false });
+    expect(res).toMatchObject({ title: "Arbeitsblatt Brüche", detailsUnavailable: false, canSubmit: true, hasAnswer: false, files: [{ fileRef: "a_7001_1", name: "Brüche_Ich.txt", kind: "file" }] });
     const text = (res as { text: string }).text;
     expect(text).toContain("Hallo Ich,");
     expect(text).toContain("[dieses Blatt](https://example.org/blatt.pdf)");
@@ -87,9 +87,11 @@ describe("MCP-Protokoll (in-memory)", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "itslearning_download_file",
       "itslearning_get_message_thread",
       "itslearning_get_task",
       "itslearning_list_bulletins",
+      "itslearning_list_course_files",
       "itslearning_list_courses",
       "itslearning_list_message_threads",
       "itslearning_list_news",

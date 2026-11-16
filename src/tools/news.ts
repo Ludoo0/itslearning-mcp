@@ -2,8 +2,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ApiNotification } from "../api/types";
 import type { AppContext } from "../context";
+import { type FileRefDto, formatRef } from "../files/refs";
 import type { Person } from "../redaction/registry";
-import { registerPublishedBy } from "./people";
+import { bulletinImages } from "./bulletins";
+import { registerPublishedBy, warmCourses } from "./people";
 import { handler, ok } from "./result";
 
 const PAGE_SIZE = 50;
@@ -21,7 +23,9 @@ export type NewsItem = {
   elementId?: number;
   elementType?: string;
   bulletinId?: number;
-  imageCount?: number;
+  images?: FileRefDto[];
+  /** Bei kind=element: Referenz für itslearning_download_file (falls das Element eine Datei ist). */
+  fileRef?: string;
 };
 
 export const isoDate = z
@@ -39,18 +43,25 @@ export function toNewsItem(ctx: AppContext, n: ApiNotification): NewsItem {
   const lb = n.LightBulletin;
   const kind: NewsItem["kind"] = lb ? "bulletin" : n.ElementId && n.ElementType && n.ElementType !== "Unknown" ? "element" : "other";
   const authorSrc = lb?.PublishedBy ?? n.PublishedBy;
-  const images = lb?.AttachedImages?.length ?? 0;
+  const courseId = n.LocationId && /course/i.test(n.LocationType ?? "") ? n.LocationId : undefined;
+  const images = lb ? bulletinImages(ctx, courseId, lb) : [];
   return {
     id: n.NotificationId,
     published: lb?.PublishedDate ?? n.PublishedDate ?? null,
     course: ctx.redactor.title(n.LocationTitle),
-    ...(n.LocationId && /course/i.test(n.LocationType ?? "") ? { courseId: n.LocationId } : {}),
+    ...(courseId ? { courseId } : {}),
     author: authorSrc ? ctx.redactor.people.resolve(authorSrc.PersonId) : null,
     text: ctx.redactor.text(lb?.Text ?? n.Text, TEXT_LEN),
     kind,
-    ...(kind === "element" ? { elementId: n.ElementId!, elementType: n.ElementType! } : {}),
+    ...(kind === "element"
+      ? {
+          elementId: n.ElementId!,
+          elementType: n.ElementType!,
+          ...(n.ElementType === "LearningToolElement" ? { fileRef: formatRef({ kind: "element", elementId: n.ElementId! }) } : {}),
+        }
+      : {}),
     ...(lb ? { bulletinId: lb.LightBulletinId } : {}),
-    ...(images ? { imageCount: images } : {}),
+    ...(images.length ? { images } : {}),
   };
 }
 
@@ -88,6 +99,7 @@ export async function listNews(ctx: AppContext, args: ListNewsArgs) {
     registerPublishedBy(ctx.redactor.people, n.LightBulletin?.PublishedBy, "teacher-weak");
   }
   const page = collected.slice(0, limit);
+  await warmCourses(ctx, page.map((n) => (/course/i.test(n.LocationType ?? "") ? n.LocationId : undefined)));
   return { items: page.map((n) => toNewsItem(ctx, n)), hasMore: collected.length > limit || !exhausted };
 }
 

@@ -67,7 +67,15 @@ async function main() {
   } else {
     const args = parseArgs(argTokens);
     const res = await client.callTool({ name: toolName, arguments: args });
-    for (const c of res.content as { type: string; text?: string }[]) if (c.type === "text") console.log(c.text);
+    const savedTo = (res.structuredContent as { savedTo?: string } | undefined)?.savedTo;
+    for (const c of res.content as { type: string; text?: string; data?: string; mimeType?: string; resource?: { blob?: string; mimeType?: string } }[]) {
+      if (c.type === "text") console.log(c.text);
+      else if (c.type === "image") console.log(`[Bild: ${c.mimeType}, ${Math.round(((c.data?.length ?? 0) * 3) / 4 / 1024)} KB – Inhalt nicht angezeigt]`);
+      else if (c.type === "resource") {
+        const kb = Math.round(((c.resource?.blob?.length ?? 0) * 3) / 4 / 1024);
+        console.log(`[Datei: ${c.resource?.mimeType}, ${kb} KB – ${savedTo ? `gespeichert unter ${savedTo}` : "Inhalt nicht angezeigt; mit DOWNLOAD_DIR=… speichern"}]`);
+      }
+    }
     if (res.isError) process.exitCode = 1;
   }
   await client.close();

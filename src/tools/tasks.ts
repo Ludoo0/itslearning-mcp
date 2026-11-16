@@ -1,8 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { ApiTask } from "../api/types";
+import type { ApiAssignment, ApiTask } from "../api/types";
 import type { AppContext } from "../context";
 import { ToolError } from "../errors";
+import { type FileRefDto, formatRef } from "../files/refs";
+import { redactFileName } from "./files";
+import { warmCourses } from "./people";
 import { handler, ok } from "./result";
 
 /** Status-Werte, die als erledigt gelten (gesehen bisher nur "NotStarted"; weitere Werte ⏳). */
@@ -30,6 +33,7 @@ function taskType(t: { ElementType?: string | null }): TaskDto["type"] {
   return "other";
 }
 
+const courseIdOf = (t: ApiTask) => (t.LocationId && /course/i.test(t.LocationType ?? "") ? t.LocationId : undefined);
 const isOpen = (t: ApiTask) => !DONE_RE.test(t.Status ?? "");
 const deadlineMs = (d?: string | null) => {
   if (!d) return undefined;
@@ -92,11 +96,31 @@ export async function listTasks(ctx: AppContext, args: ListTasksArgs) {
   }
   tasks = [...tasks].sort((a, b) => (deadlineMs(a.Deadline) ?? Infinity) - (deadlineMs(b.Deadline) ?? Infinity));
 
-  const page = tasks.slice(offset, offset + limit).map((t) => toTaskDto(ctx, t));
+  const pageRaw = tasks.slice(offset, offset + limit);
+  await warmCourses(ctx, pageRaw.map(courseIdOf));
+  const page = pageRaw.map((t) => toTaskDto(ctx, t));
   return { tasks: page, total: tasks.length, hasMore: offset + page.length < tasks.length };
 }
 
 // ---------- get_task ----------
+
+/**
+ * Anhänge einer Aufgabe → fileRefs. Die genaue Form der Datei-Objekte ist noch nicht verifiziert (⏳),
+ * daher tolerant: FileId/Id als ID, FileName/Name/Title als Name.
+ */
+export function assignmentFiles(ctx: AppContext, elementId: number, a: ApiAssignment): FileRefDto[] {
+  const raw = [...(Array.isArray(a.Files) ? a.Files : []), ...(a.TemplateFile ? [a.TemplateFile] : [])];
+  const out: FileRefDto[] = [];
+  raw.forEach((f, i) => {
+    if (!f || typeof f !== "object") return;
+    const o = f as Record<string, unknown>;
+    const fileId = typeof o.FileId === "number" ? o.FileId : typeof o.Id === "number" ? o.Id : undefined;
+    if (fileId === undefined) return;
+    const name = [o.FileName, o.Name, o.Title].find((v): v is string => typeof v === "string" && v.trim() !== "") ?? `Anhang ${i + 1}`;
+    out.push({ fileRef: formatRef({ kind: "assignment", elementId, fileId }), name: redactFileName(ctx, name), kind: "file" });
+  });
+  return out;
+}
 
 export const getTaskInput = {
   elementId: z.number().int().positive().describe("elementId aus itslearning_list_tasks"),
@@ -104,6 +128,7 @@ export const getTaskInput = {
 
 export async function getTask(ctx: AppContext, args: { elementId: number }) {
   const base = (await ctx.it.tasks()).find((t) => t.ElementId === args.elementId);
+  if (base) await warmCourses(ctx, [courseIdOf(base)]);
 
   let a: Awaited<ReturnType<AppContext["it"]["assignment"]>> | undefined;
   try {
@@ -115,7 +140,7 @@ export async function getTask(ctx: AppContext, args: { elementId: number }) {
   if (!a && !base) throw new ToolError("NOT_FOUND", "Aufgabe nicht gefunden.");
 
   const baseDto = base ? toTaskDto(ctx, base) : undefined;
-  const files = (a?.Files?.length ?? 0) + (a?.FilesInCloud?.length ?? 0) + (a?.TemplateFile ? 1 : 0);
+  const files = a ? assignmentFiles(ctx, args.elementId, a) : [];
   const deadline = a?.Deadline ?? base?.Deadline ?? null;
   const due = deadlineMs(deadline);
 
@@ -138,7 +163,8 @@ export async function getTask(ctx: AppContext, args: { elementId: number }) {
           lateSubmissionAllowed: a.IsSubmissionAfterDeadlineAllowed ?? false,
           hasAnswer: a.AnswerId != null,
           canSubmit: a.CanSubmitOrEditAnswer ?? false,
-          attachmentCount: files, // Download der Anhänge: Meilenstein 3 (fileRef)
+          files,
+          ...(a.FilesInCloud?.length ? { cloudFilesCount: a.FilesInCloud.length } : {}),
         }
       : {}),
   };
@@ -166,7 +192,7 @@ export function registerTaskTools(server: McpServer, ctx: AppContext) {
     {
       title: "Aufgabe im Detail",
       description:
-        "Details einer Aufgabe: Aufgabenstellung (geschwärzt, als Text), Frist, Abgabe-Art, ob schon abgegeben. Bei manchen Aufgabentypen sind keine Details verfügbar (detailsUnavailable).",
+        "Details einer Aufgabe: Aufgabenstellung (geschwärzt, als Text), Frist, Abgabe-Art, ob schon abgegeben, Anhänge (fileRef → itslearning_download_file). Bei manchen Aufgabentypen sind keine Details verfügbar (detailsUnavailable).",
       inputSchema: getTaskInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
