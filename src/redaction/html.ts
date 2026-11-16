@@ -1,0 +1,65 @@
+/** Einfache HTML → Text/Markdown-Umwandlung für itslearning-Inhalte (Spec 6.4, Schritt 1). */
+import { isShareableUrl } from "./secrets";
+
+const ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  auml: "ä",
+  ouml: "ö",
+  uuml: "ü",
+  Auml: "Ä",
+  Ouml: "Ö",
+  Uuml: "Ü",
+  szlig: "ß",
+  euro: "€",
+  ndash: "–",
+  mdash: "—",
+  hellip: "…",
+  bdquo: "„",
+  ldquo: "“",
+  rdquo: "”",
+};
+
+export function decodeEntities(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+    if (e[0] === "#") {
+      const code = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : m;
+    }
+    return ENTITIES[e] ?? m;
+  });
+}
+
+export function looksLikeHtml(s: string): boolean {
+  return /<\/?[a-z][^>]*>/i.test(s) || /&(#\d+|[a-z]+);/i.test(s);
+}
+
+export function htmlToText(html: string): string {
+  let s = html;
+  s = s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  s = s.replace(/<a\b[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href: string, inner: string) => {
+    const text = inner.replace(/<[^>]+>/g, "").trim();
+    const url = decodeEntities(href);
+    if (isShareableUrl(url)) return text && text !== url ? `[${text}](${url})` : url;
+    return text;
+  });
+  s = s.replace(/<br\s*\/?>/gi, "\n");
+  s = s.replace(/<li[^>]*>/gi, "\n- ");
+  s = s.replace(/<\/li>/gi, "");
+  s = s.replace(/<\/(p|div|ul|ol|h[1-6]|tr|table|blockquote)>/gi, "\n");
+  s = s.replace(/<h([1-6])[^>]*>/gi, (_, n: string) => "\n" + "#".repeat(Number(n)) + " ");
+  s = s.replace(/<\/?(strong|b)>/gi, "**");
+  s = s.replace(/<\/?(em|i)>/gi, "_");
+  s = s.replace(/<img\b[^>]*>/gi, "[Bild]");
+  s = s.replace(/<[^>]+>/g, "");
+  s = decodeEntities(s);
+  return s
+    .replace(/[ \t ]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

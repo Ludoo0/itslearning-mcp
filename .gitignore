@@ -6,3 +6,4 @@ probe-output/
 secrets/
 .idea/
 .vscode/
+.data/

@@ -70,7 +70,7 @@ Alle Werte kommen aus Umgebungsvariablen. Für Geheimnisse gibt es jeweils eine 
 | `ITSL_USERNAME` / `_FILE` | ✅ | – | itslearning-Benutzername |
 | `ITSL_PASSWORD` / `_FILE` | ✅ | – | itslearning-Passwort |
 | `ITSL_CLIENT_ID` | | `10ae9d30-1853-48ff-81cb-47b58a325685` | OAuth-Client-ID (öffentliche ID der Mobile-App) |
-| `MCP_TRANSPORT` | | `http` | `http` (Streamable HTTP) oder `stdio` |
+| `MCP_TRANSPORT` | | `stdio` (Docker-Image: `http`) | `http` (Streamable HTTP) oder `stdio` |
 | `MCP_PORT` | | `3000` | Port für HTTP |
 | `MCP_API_KEY` / `_FILE` | ✅ bei `http` | – | Bearer-Key, den Clients senden müssen (≥ 32 Zeichen) |
 | `REDACTION_SECRET` / `_FILE` | | auto | HMAC-Secret für Pseudonyme. Fehlt es, wird es einmalig erzeugt und in `/data/secret` gespeichert |
