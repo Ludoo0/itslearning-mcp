@@ -4,9 +4,24 @@ import type { Config } from "./config";
 import { ToolError } from "./errors";
 import { log } from "./log";
 import type { Redactor } from "./redaction/redactor";
+import { registerThread } from "./tools/people";
 
 /** Die Teile der API, die Tools nutzen (als Interface, damit Tests Fakes einsetzen können). */
-export type ItslearningApi = Pick<Itslearning, "person" | "courses" | "starredCourseIds" | "tasks" | "courseTasks" | "assignment">;
+export type ItslearningApi = Pick<
+  Itslearning,
+  | "person"
+  | "courses"
+  | "starredCourseIds"
+  | "tasks"
+  | "courseTasks"
+  | "assignment"
+  | "notificationStream"
+  | "courseStream"
+  | "courseBulletins"
+  | "bulletinElements"
+  | "messageThreads"
+  | "threadMessages"
+>;
 
 export type AppContext = {
   cfg: Pick<Config, "baseUrl" | "redactTeachers">;
@@ -48,6 +63,15 @@ export function createContext(opts: {
         throw fatal;
       }
       throw e;
+    }
+
+    // Namens-Wörterbuch vorwärmen: Teilnehmer der neuesten Unterhaltungen (Mitschüler:innen, Lehrkräfte),
+    // damit ihre Namen auch in Aufgaben- und Neuigkeiten-Texten erkannt werden. Fehler hier sind nicht kritisch.
+    try {
+      const threads = await opts.it.messageThreads(50);
+      for (const t of threads.Threads?.EntityArray ?? []) registerThread(opts.redactor.people, t);
+    } catch {
+      log.warn("Namens-Wörterbuch konnte nicht vorgewärmt werden (Nachrichten nicht verfügbar)");
     }
   };
 

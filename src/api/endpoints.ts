@@ -1,6 +1,18 @@
 /** Typisierte Aufrufe der verifizierten Endpunkte (docs/itslearning-api.md). */
 import type { ApiClient } from "./client";
-import type { ApiAssignment, ApiCourse, ApiCourseCard, ApiPerson, ApiTask, Paged } from "./types";
+import type {
+  ApiAssignment,
+  ApiCourse,
+  ApiCourseCard,
+  ApiElement,
+  ApiLightBulletin,
+  ApiNotification,
+  ApiPerson,
+  ApiTask,
+  ApiThreadList,
+  ApiThreadMessages,
+  Paged,
+} from "./types";
 
 const P = "/restapi/personal";
 const PAGE_SIZE = 100;
@@ -33,6 +45,33 @@ export class Itslearning {
 
   assignment(elementId: number): Promise<ApiAssignment> {
     return this.api.get<ApiAssignment>(`${P}/assignments/{elementId}/v1`, { elementId });
+  }
+
+  /** Neuigkeiten über alle Kurse, inkl. Light Bulletins. */
+  notificationStream(pageIndex: number, pageSize: number): Promise<Paged<ApiNotification>> {
+    return this.api.get(`${P}/notifications/stream/v2`, {}, { showLightBulletins: true, PageIndex: pageIndex, PageSize: pageSize });
+  }
+
+  courseStream(courseId: number, pageIndex: number, pageSize: number): Promise<Paged<ApiNotification>> {
+    return this.api.get(`${P}/courses/{courseId}/stream/v1`, { courseId }, { showLightBulletins: true, PageIndex: pageIndex, PageSize: pageSize });
+  }
+
+  courseBulletins(courseId: number, pageIndex: number, pageSize: number): Promise<Paged<ApiLightBulletin>> {
+    return this.api.get(`${P}/courses/{courseId}/bulletins/v1`, { courseId }, { PageIndex: pageIndex, PageSize: pageSize });
+  }
+
+  async bulletinElements(bulletinId: number): Promise<ApiElement[]> {
+    return this.all<ApiElement>(`${P}/courses/bulletins/{bulletinId}/elements/v1`, { bulletinId });
+  }
+
+  /** Nachrichten-Threads (v4). `fromSortIndex` für Folgeseiten (Semantik ⏳: SortIndex des letzten Threads). */
+  messageThreads(pageSize: number, fromSortIndex?: number): Promise<ApiThreadList> {
+    return this.api.get(`${P}/instantmessages/messagethreads/v4`, {}, { pageSize, fromSortIndex });
+  }
+
+  /** Nachrichten eines Threads (v3). `fromId` für ältere Nachrichten (Semantik ⏳). */
+  threadMessages(threadId: number, pageSize: number, fromId?: number): Promise<ApiThreadMessages> {
+    return this.api.get(`${P}/instantmessages/messagethreads/{threadId}/messages/v3`, { threadId }, { pageSize, fromId });
   }
 
   /** Holt alle Seiten einer Paged-Liste (mit Obergrenze, damit nichts ausufert). */

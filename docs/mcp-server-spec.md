@@ -289,7 +289,9 @@ Jede Person, die in einer API-Antwort auftaucht, wird über ihre `PersonId` regi
 
 Rollenregeln:
 - Wurde eine Person einmal sicher als Lehrkraft erkannt, bleibt sie Lehrkraft, auch über Neustarts (gespeichert in `teachers.json`).
-- `unknown` wird **wie `student` behandelt** (sicherer Default).
+- `unknown` wird **wie `student` geschützt** (Pseudonym), aber als `Person-XXXX` angezeigt.
+- **Vorwärmen:** Nach dem Login lädt der Server einmalig die neuesten 50 Unterhaltungen und registriert deren Teilnehmer:innen, damit deren Namen auch in Aufgaben- und Neuigkeiten-Texten erkannt werden.
+- `Frau/Herr <Nachname>`-Varianten kommen nur für Lehrkräfte ins Wörterbuch (sonst Kollisionen mit gleichnamigen Schüler:innen). Mehrdeutige Schreibweisen (zwei Personen, gleicher Name) werden zu `[Name]`.
 
 ### 6.2 Anzeige
 
@@ -299,7 +301,8 @@ Rollenregeln:
 | `teacher` (Anrede gepflegt) | `<Anrede> <Nachname>` | `Frau Müller` |
 | `teacher` (Anrede leer) | `Lehrkraft <Nachname>` | `Lehrkraft Müller` |
 | `teacher` mit `REDACT_TEACHERS=true` | `Lehrkraft-<hash4>` | `Lehrkraft-A3F2` |
-| `student` / `unknown` | `Schüler:in-<hash4>` | `Schüler:in-7F3A` |
+| `student` | `Schüler:in-<hash4>` | `Schüler:in-7F3A` |
+| `unknown` | `Person-<hash4>` (gleich geschützt wie Schüler:innen, aber ohne falsche Rollenbehauptung) | `Person-7F3A` |
 
 `hash4` = die ersten 4 Hex-Zeichen von `HMAC-SHA256(REDACTION_SECRET, baseUrl + PersonId)`, großgeschrieben. Bei Kollisionen innerhalb der Registry wird der Wert auf 6 Zeichen verlängert. Das Pseudonym bleibt über Neustarts gleich.
 

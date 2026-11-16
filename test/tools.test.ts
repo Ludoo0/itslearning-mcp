@@ -86,7 +86,16 @@ describe("MCP-Protokoll (in-memory)", () => {
   test("Tools sind registriert und read-only annotiert", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["itslearning_get_task", "itslearning_list_courses", "itslearning_list_tasks"]);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "itslearning_get_message_thread",
+      "itslearning_get_task",
+      "itslearning_list_bulletins",
+      "itslearning_list_courses",
+      "itslearning_list_message_threads",
+      "itslearning_list_news",
+      "itslearning_list_tasks",
+      "itslearning_overview",
+    ]);
     for (const t of tools) expect(t.annotations?.readOnlyHint).toBe(true);
   });
 

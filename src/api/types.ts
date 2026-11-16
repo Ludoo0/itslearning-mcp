@@ -52,6 +52,107 @@ export type ApiTask = {
   Homework?: boolean;
 };
 
+/** Person-Objekt in PublishedBy (Stream, Newsfeed, Bulletins). */
+export type ApiPublishedBy = {
+  PersonId: number;
+  FirstName?: string | null;
+  LastName?: string | null;
+  FullName?: string | null;
+};
+
+export type ApiImage = {
+  PreviewFileId?: number;
+  PreviewFileUrl?: string | null;
+  OriginalFileId?: number;
+  OriginalFileUrl?: string | null;
+};
+
+export type ApiLightBulletin = {
+  LightBulletinId: number;
+  Text?: string | null;
+  EmbedUrl?: string | null;
+  Pinned?: boolean;
+  AllowComments?: boolean;
+  HasResources?: boolean;
+  AttachedImages?: ApiImage[] | null;
+  ResourcesCount?: number;
+  CommentsCount?: number;
+  ActiveFromDate?: string | null;
+  ActiveToDate?: string | null;
+  PublishedDate?: string | null;
+  PublishedBy?: ApiPublishedBy | null;
+};
+
+/** Eintrag aus notifications/stream/v2 bzw. courses/{id}/stream/v1. */
+export type ApiNotification = {
+  NotificationId: number;
+  Text?: string | null;
+  LocationTitle?: string | null;
+  PublishedDate?: string | null;
+  PublishedBy?: ApiPublishedBy | null;
+  ElementId?: number | null;
+  ElementType?: string | null;
+  ElementsCount?: number;
+  LightBulletin?: ApiLightBulletin | null;
+  LocationType?: string | null;
+  LocationId?: number | null;
+};
+
+/** Element (z. B. Ressource eines Bulletins). */
+export type ApiElement = {
+  ElementId: number;
+  ElementType?: string | null;
+  Title?: string | null;
+  LearningToolId?: number | null;
+  Homework?: boolean;
+};
+
+export type ApiParticipant = {
+  PersonId: number;
+  FirstName?: string | null;
+  LastName?: string | null;
+  FullName?: string | null;
+  RoleInHierarchyTitle?: string | null;
+  RoleInHierarchy?: number | null;
+  IsDeleted?: boolean;
+};
+
+export type ApiMessage = {
+  MessageId: number;
+  InstantMessageThreadId?: number;
+  Created?: string | null;
+  CreatedBy?: number | null;
+  CreatedByName?: string | null;
+  CreatedByShortName?: string | null;
+  Text?: string | null;
+  AttachmentUrl?: string | null;
+  AttachmentName?: string | null;
+  Link?: string | null;
+  LinkTitle?: string | null;
+  IsSystemMessage?: boolean;
+  IsDeleted?: boolean;
+  IsEdited?: boolean;
+};
+
+export type ApiThread = {
+  InstantMessageThreadId: number;
+  Name?: string | null;
+  Created?: string | null;
+  CreatedByTeacher?: boolean;
+  CreatedBy?: number | null;
+  Type?: string | null;
+  Messages?: Paged<ApiMessage> | null;
+  LastMessage?: ApiMessage | null;
+  Participants?: ApiParticipant[] | null;
+  ParticipantsCount?: number;
+  LocationRecipients?: { Title?: string | null; Type?: number | string | null }[] | null;
+  LastReadInstantMessageId?: number | null;
+  SortIndex?: number | null;
+};
+
+export type ApiThreadList = { Threads: Paged<ApiThread>; HasMore?: boolean };
+export type ApiThreadMessages = { Messages: Paged<ApiMessage> };
+
 export type ApiAssignment = {
   ElementId: number;
   Title?: string | null;

@@ -35,12 +35,13 @@ export class NameDictionary {
   }
 
   /** Registriert alle Schreibweisen einer Person. `display` ist der Ersatztext (z. B. "Frau Müller", "Ich"). */
-  addPerson(p: PersonNames, display: string) {
+  addPerson(p: PersonNames, display: string, opts: { withTitles?: boolean } = {}) {
     const first = clean(p.firstName);
     const last = clean(p.lastName);
     const multi: string[] = [clean(p.fullName), clean(p.shortName)];
     if (first && last) multi.push(`${first} ${last}`, `${last}, ${first}`, `${last} ${first}`, `${first[0]}. ${last}`);
-    if (last) multi.push(`Frau ${last}`, `Herr ${last}`, `Herrn ${last}`, `Fr. ${last}`, `Hr. ${last}`);
+    // "Frau/Herr Nachname" nur für Lehrkräfte – sonst Kollisionen mit gleichnamigen Schüler:innen
+    if (last && opts.withTitles) multi.push(`Frau ${last}`, `Herr ${last}`, `Herrn ${last}`, `Fr. ${last}`, `Hr. ${last}`);
     for (const m of multi) if (m.includes(" ") || m.length >= MIN_SINGLE_NAME_LEN) this.add(m, display);
     for (const single of [first, last]) {
       if (single.length >= MIN_SINGLE_NAME_LEN && !STOPWORDS.has(single.toLowerCase())) this.add(single, display);

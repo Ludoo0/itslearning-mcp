@@ -10,7 +10,7 @@ MCP-Server, der KI-Agenten **lesenden** Zugriff auf ein itslearning-Konto gibt �
 | Meilenstein | Inhalt | Stand |
 |---|---|---|
 | M1 | Grundgerüst, Config, Login/Refresh, `list_courses`, `list_tasks`, `get_task`, stdio | ✅ |
-| M2 | Personen-Registry, Lehrkräfte-Verzeichnis, Neuigkeiten, Bulletins, Nachrichten | ⏳ |
+| M2 | Personen-Registry, Lehrkräfte-Verzeichnis, `overview`, `list_news`, `list_bulletins`, `list_message_threads`, `get_message_thread` | ✅ |
 | M3 | Dateien (Download, Textextraktion, Cache) | ⏳ |
 | M4 | HTTP-Transport, Docker, Smoke-Test | ⏳ |
 
@@ -28,13 +28,32 @@ bun test
 # Tools auflisten (ohne Login)
 bun run call
 
-# Gegen das echte Konto testen (fragt URL, Benutzername und Passwort ab, Passwort verdeckt)
-bun run call itslearning_list_tasks '{"limit":5}'
-bun run call itslearning_list_courses
-bun run call itslearning_get_task '{"elementId":123}'
+# Gegen das echte Konto testen (Zugangsdaten aus .env oder interaktive Abfrage, Passwort verdeckt)
+bun run call itslearning_overview
+bun run call itslearning_list_tasks limit=5
+bun run call itslearning_get_task elementId=123
+bun run call itslearning_list_news limit=10
+bun run call itslearning_list_bulletins courseId=123
+bun run call itslearning_list_message_threads unreadOnly=true
+bun run call itslearning_get_message_thread threadId=123
 ```
 
-Der Login-Status (rotierender Refresh-Token) liegt danach in `.data/state.json` – das Passwort wird nicht gespeichert.
+Tipp: `.env.example` nach `.env` kopieren und ausfüllen – Bun lädt sie automatisch, `.env` ist von Git ausgeschlossen.
+
+In `.data/` liegen danach:
+- `state.json` – Login-Status (rotierender Refresh-Token; das Passwort wird nicht gespeichert)
+- `secret` – Schlüssel für stabile Pseudonyme
+- `teachers.json` – Lehrkräfte-Verzeichnis (siehe unten)
+
+### Anrede der Lehrkräfte pflegen
+
+Der Server trägt erkannte Lehrkräfte automatisch in `.data/teachers.json` ein (nur Nachname, keine Vornamen oder IDs):
+
+```json
+{ "teachers": [ { "id": "A3F2C1D0", "lastName": "Müller", "anrede": "" } ] }
+```
+
+`anrede` auf `"Frau"` oder `"Herr"` setzen → Agenten sehen „Frau Müller“. Leer → „Lehrkraft Müller“. Änderungen gelten ohne Neustart.
 
 ### In Claude Code einbinden
 
@@ -52,12 +71,20 @@ Docker-Betrieb folgt mit Meilenstein 4.
 
 Siehe [`.env.example`](.env.example) und Spec, Abschnitt 3.
 
-## Datenschutz (Stand M1)
+## Datenschutz (Stand M2)
 
-- Das eigene Konto erscheint in allen Texten als `Ich`.
-- E-Mail-Adressen, Telefonnummern und itslearning-interne Links (inkl. Download-Tokens) werden aus Texten entfernt.
+| Wer | Anzeige |
+|---|---|
+| eigenes Konto | `Ich` |
+| Lehrkraft | `Frau Müller` / `Lehrkraft Müller` (mit `REDACT_TEACHERS=true`: `Lehrkraft-A3F2`) |
+| Mitschüler:in | `Schüler:in-7F3A` |
+| Rolle unbekannt | `Person-7F3A` |
+
+- Pseudonyme sind stabil (HMAC über die PersonId mit lokalem Secret).
+- Namen in Freitexten (Aufgaben, Neuigkeiten, Nachrichten, Thread-Titel, Anhang-Namen) werden über ein Wörterbuch aller bisher gesehenen Personen ersetzt. Beim Start wird es mit den Teilnehmer:innen der neuesten Unterhaltungen vorgefüllt.
+- E-Mail-Adressen, Telefonnummern und itslearning-interne Links (inkl. Download-Tokens) werden entfernt; externe Links bleiben.
 - Tools geben nur ausgewählte Felder zurück, nie die Roh-Antwort der API.
-- **Noch nicht in M1:** Namen von Lehrkräften und Mitschüler:innen in Freitexten werden erst mit der Personen-Registry in M2 ersetzt.
+- **Grenzen:** Namen von Personen, die in keinem Strukturfeld vorkamen (z. B. Eltern), werden in Texten nicht erkannt. Pseudonymisierung ist keine Anonymisierung.
 
 ## Entwicklung
 
