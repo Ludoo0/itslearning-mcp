@@ -1,0 +1,8 @@
+node_modules/
+probe-output/
+.env
+.env.*
+!.env.example
+secrets/
+.idea/
+.vscode/

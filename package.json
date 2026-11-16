@@ -1,0 +1,13 @@
+{
+  "name": "itslearning-mcp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "probe": "bun run scripts/probe.ts",
+    "probe2": "bun run scripts/probe2.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
