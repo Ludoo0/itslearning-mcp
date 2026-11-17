@@ -2,10 +2,15 @@ name: Release
 
 # Triggered by pushing a version tag, e.g. `git tag v0.1.0 && git push origin v0.1.0`.
 # Publishes a multi-arch image to GHCR and creates a GitHub release with the matching CHANGELOG section.
+#
+# Dry run: start it manually ("Run workflow", or `gh workflow run release.yml`). It runs the complete
+# pipeline (tests, QEMU, Buildx, GHCR login, metadata, multi-arch build) but pushes nothing and
+# creates no release – useful after updating the actions used here.
 
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,6 +29,7 @@ jobs:
       - run: bun test
 
       - name: Tag matches package.json version
+        if: github.event_name == 'push'
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           PKG="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
@@ -66,12 +72,12 @@ jobs:
             org.opencontainers.image.description=Read-only MCP server for itslearning with redaction of personal data
             org.opencontainers.image.licenses=MIT
 
-      - name: Build and push
+      - name: Build and push (dry run → build only)
         uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -80,6 +86,7 @@ jobs:
   github-release:
     name: GitHub release
     needs: image
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
