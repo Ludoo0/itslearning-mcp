@@ -62,9 +62,18 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
   }
   const courses = arr((await call("itslearning_list_courses"))?.courses);
   const tasks = arr((await call("itslearning_list_tasks", { status: "all", limit: 50 }))?.tasks);
-  const taskWithFiles = tasks[0];
+  // Task details: the first task plus a few others, preferring activities (their text comes from the task's web page)
+  const taskSample = [
+    ...new Set([tasks[0], ...tasks.filter((t) => t.type === "activity").slice(0, 2), ...tasks.slice(1, 3)].filter(Boolean)),
+  ].slice(0, 4);
   let taskDetail: Obj | undefined;
-  if (taskWithFiles) taskDetail = await call("itslearning_get_task", { elementId: taskWithFiles.elementId });
+  let pageTasks = 0;
+  for (const t of taskSample) {
+    const d = await call("itslearning_get_task", { elementId: t.elementId });
+    if (d?.detailsSource === "page") pageTasks++;
+    if (!taskDetail && arr(d?.files).length) taskDetail = d;
+    taskDetail ??= d;
+  }
   await call("itslearning_list_news", { limit: 20 });
 
   const courseForBulletins = courses.find((c) => c.newBulletins > 0) ?? courses[0];
@@ -244,6 +253,7 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     Tool calls:          ${runs.length} (${runs.filter((r) => r.ok).length} ok, ${runs.filter((r) => !r.ok).length} with error code)
     Error codes:         ${[...new Set(runs.filter((r) => r.code).map((r) => r.code))].join(", ") || "–"}
     Downloads tested:    ${fileRefs.size}
+    Task details:        ${taskSample.length} tested, ${pageTasks} with text from the task page
     Names checked:       ${forbidden.size} terms from ${names.size} people (${ambiguous} ambiguous skipped)
     Roles detected:      ${roles.teacher} teachers, ${roles.student} students, ${roles.unknown} unknown
     Participant lists:   ${
