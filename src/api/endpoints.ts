@@ -48,7 +48,8 @@ export class Itslearning {
   }
 
   assignment(elementId: number): Promise<ApiAssignment> {
-    return this.api.get<ApiAssignment>(`${P}/assignments/{elementId}/v1`, { elementId });
+    // 403/404 is expected for task types the assignment API does not describe; get_task falls back to the task page
+    return this.api.get<ApiAssignment>(`${P}/assignments/{elementId}/v1`, { elementId }, {}, { expectedStatuses: [403, 404] });
   }
 
   /** News across all courses, including light bulletins. */

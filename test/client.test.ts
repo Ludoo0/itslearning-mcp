@@ -86,3 +86,27 @@ describe("ApiClient", () => {
     expect(seen).toHaveLength(2);
   });
 });
+
+describe("ApiClient logging", () => {
+  test("expected statuses are logged at debug level, others as warning", async () => {
+    const { setLogLevel } = await import("../src/log");
+    const lines: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    setLogLevel("warn");
+    try {
+      const { fetchImpl } = server([json({}, 403), json({}, 403)]);
+      const api = new ApiClient(cfg, fakeAuth(), fetchImpl, noSleep);
+      await api.get("/expected", {}, {}, { expectedStatuses: [403] }).catch(() => {});
+      expect(lines.filter((l) => l.includes('"level":"warn"'))).toHaveLength(0);
+      await api.get("/unexpected").catch(() => {});
+      expect(lines.filter((l) => l.includes('"level":"warn"') && l.includes("/unexpected"))).toHaveLength(1);
+    } finally {
+      process.stderr.write = orig;
+      setLogLevel("error");
+    }
+  });
+});
