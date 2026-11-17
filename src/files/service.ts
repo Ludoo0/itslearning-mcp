@@ -1,14 +1,15 @@
 /**
- * Datei-Downloads (Spec 5.10, docs/itslearning-api.md → "Dateien herunterladen"):
- *   element      → courses/resources/{id}/v1 → sso/url/v1 → Web-Session → (iframes) → DownloadRedirect → Datei
- *   assignment   → assignments/{id}/files/{fileId}/v1 (302) → Datei
- *   message      → AttachmentUrl (tokenisierte filerepository-URL) → Datei
- *   bulletinImage→ OriginalFileUrl (tokenisiert) → Datei
- * Geheime URLs bleiben in dieser Klasse; nach außen gehen nur Name, Typ und Bytes.
+ * File downloads (spec 5.10, docs/itslearning-api.md → "Downloading files"):
+ *   element      → courses/resources/{id}/v1 → sso/url/v1 → web session → (iframes) → DownloadRedirect → file
+ *   assignment   → assignments/{id}/files/{fileId}/v1 (302) → file
+ *   message      → AttachmentUrl (tokenized filerepository URL) → file
+ *   bulletinImage→ OriginalFileUrl (tokenized) → file
+ * Secret URLs stay inside this class; only name, type and bytes leave it.
  */
 import type { ItslearningApi } from "../context";
 import { ToolError } from "../errors";
 import { log } from "../log";
+import { LABELS, type Labels } from "../redaction/labels";
 import {
   type BrowseResult,
   CookieJar,
@@ -27,7 +28,7 @@ export type FileApi = Pick<ItslearningApi, "resource" | "ssoUrl" | "assignmentFi
 
 export type DownloadResult =
   | { type: "file"; ref: string; name: string; mimeType: string; data: Uint8Array; cached: boolean }
-  /** Element ist keine Datei (z. B. Seite, Link, Test) – HTML der Seite, NICHT geschwärzt. */
+  /** Element is not a file (e.g. page, link, test) – HTML of the page, NOT redacted. */
   | { type: "page"; ref: string; title: string; html: string };
 
 const MAX_FRAME_DEPTH = 3;
@@ -36,14 +37,17 @@ const MAX_REMEMBERED = 2_000;
 export class FileService {
   private urls = new Map<string, string>();
   private jar = new CookieJar();
+  private labels: Labels;
 
   constructor(
     private api: FileApi,
     private browser: WebBrowser,
-    private opts: { maxBytes: number; cache?: FileCache },
-  ) {}
+    private opts: { maxBytes: number; cache?: FileCache; labels?: Labels },
+  ) {
+    this.labels = opts.labels ?? LABELS.en;
+  }
 
-  /** Tools merken sich geheime URLs zu Referenzen, die sie gerade ausgegeben haben (spart erneutes Nachschlagen). */
+  /** Tools remember secret URLs for references they just returned (saves another lookup). */
   remember(ref: string, url: string | null | undefined) {
     if (!url) return;
     if (this.urls.size >= MAX_REMEMBERED) this.urls.delete(this.urls.keys().next().value!);
@@ -66,15 +70,15 @@ export class FileService {
         return this.downloadElement(ref, src.elementId);
       case "assignment": {
         const loc = await this.api.assignmentFileLocation(src.elementId, src.fileId);
-        return this.fetchDirect(ref, loc, `Anhang-${src.fileId}`);
+        return this.fetchDirect(ref, loc, `${this.labels.attachment}-${src.fileId}`);
       }
       case "message": {
         const url = this.urls.get(ref) ?? (await this.findMessageAttachment(src.threadId, src.messageId));
-        return this.fetchDirect(ref, url, "Anhang");
+        return this.fetchDirect(ref, url, this.labels.attachment);
       }
       case "bulletinImage": {
         const url = this.urls.get(ref) ?? (await this.findBulletinImage(src.courseId, src.bulletinId, src.index));
-        return this.fetchDirect(ref, url, `Bild-${src.index + 1}`);
+        return this.fetchDirect(ref, url, this.labels.imageN(src.index + 1));
       }
     }
   }
@@ -85,12 +89,12 @@ export class FileService {
     if (!br.res.ok) {
       await br.res.body?.cancel().catch(() => {});
       throw br.res.status === 404 || br.res.status === 403
-        ? new ToolError("NOT_FOUND", "Datei nicht (mehr) verfügbar – Liste erneut abrufen.", br.res.status)
-        : new ToolError("UPSTREAM_ERROR", "Datei-Server von itslearning hat die Anfrage abgelehnt.", br.res.status);
+        ? new ToolError("NOT_FOUND", "File not available (anymore) – fetch the list again.", br.res.status)
+        : new ToolError("UPSTREAM_ERROR", "The itslearning file server rejected the request.", br.res.status);
     }
     if (!isFileResponse(br.res)) {
       await br.res.body?.cancel().catch(() => {});
-      throw new ToolError("NOT_A_FILE", "Unter dieser Referenz liegt keine Datei.");
+      throw new ToolError("NOT_A_FILE", "There is no file behind this reference.");
     }
     return this.toFile(ref, br, fallbackName);
   }
@@ -101,12 +105,12 @@ export class FileService {
     return { type: "file", ref, name, mimeType: resolveMimeType(br.res.headers.get("content-type"), name), data, cached: false };
   }
 
-  /** Kurs-Element über die Web-Oberfläche. Bei abgelaufener Web-Session einmal mit frischer Session wiederholen. */
+  /** Course element via the web interface. If the web session expired, retry once with a fresh session. */
   private async downloadElement(ref: string, elementId: number): Promise<DownloadResult> {
     const detail = await this.api.resource(elementId);
-    if (/folder/i.test(detail.ElementType ?? "")) throw new ToolError("NOT_A_FILE", "Das ist ein Ordner – Inhalte mit itslearning_list_course_files abrufen.");
+    if (/folder/i.test(detail.ElementType ?? "")) throw new ToolError("NOT_A_FILE", "This is a folder – list its content with itslearning_list_course_files.");
     const target = detail.ContentUrl || detail.Url;
-    if (!target) throw new ToolError("NOT_A_FILE", "Für dieses Element gibt es keinen Inhalt.");
+    if (!target) throw new ToolError("NOT_A_FILE", "This element has no content.");
     const title = detail.Title?.trim() || `Element-${elementId}`;
 
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -114,19 +118,19 @@ export class FileService {
       const sso = await this.api.ssoUrl(target);
       const result = await this.follow(ref, await this.browser.get(sso, this.jar), title, 0);
       if (result !== "login") return result;
-      log.info("Web-Session abgelaufen – neuer Versuch");
+      log.info("Web session expired – retrying");
     }
-    throw new ToolError("UPSTREAM_ERROR", "Anmeldung an der itslearning-Weboberfläche fehlgeschlagen.");
+    throw new ToolError("UPSTREAM_ERROR", "Login to the itslearning web interface failed.");
   }
 
-  /** Folgt Download-Links und iframes, bis eine Datei kommt (oder klar ist, dass es keine gibt). */
+  /** Follows download links and iframes until a file arrives (or it is clear there is none). */
   private async follow(ref: string, br: BrowseResult, title: string, depth: number): Promise<DownloadResult | "login"> {
     if (br.res.ok && isFileResponse(br.res)) return this.toFile(ref, br, title);
     if (!br.res.ok) {
       await br.res.body?.cancel().catch(() => {});
       throw br.res.status === 403 || br.res.status === 404
-        ? new ToolError("FORBIDDEN", "Kein Zugriff auf diese Datei.", br.res.status)
-        : new ToolError("UPSTREAM_ERROR", "itslearning-Weboberfläche nicht erreichbar.", br.res.status);
+        ? new ToolError("FORBIDDEN", "No access to this file.", br.res.status)
+        : new ToolError("UPSTREAM_ERROR", "itslearning web interface not reachable.", br.res.status);
     }
     const html = await br.res.text();
     if (looksLikeLoginPage(html)) return "login";
@@ -146,7 +150,7 @@ export class FileService {
   private async findMessageAttachment(threadId: number, messageId: number): Promise<string> {
     const res = await this.api.threadMessages(threadId, 100);
     const url = res.Messages?.EntityArray?.find((m) => m.MessageId === messageId)?.AttachmentUrl;
-    if (!url) throw new ToolError("FILE_REF_UNKNOWN", "Anhang nicht gefunden – Unterhaltung erneut abrufen.");
+    if (!url) throw new ToolError("FILE_REF_UNKNOWN", "Attachment not found – fetch the conversation again.");
     return url;
   }
 
@@ -161,6 +165,6 @@ export class FileService {
       }
       if ((res.EntityArray?.length ?? 0) < 50) break;
     }
-    throw new ToolError("FILE_REF_UNKNOWN", "Bild nicht gefunden – Ankündigungen erneut abrufen.");
+    throw new ToolError("FILE_REF_UNKNOWN", "Image not found – fetch the announcements again.");
   }
 }

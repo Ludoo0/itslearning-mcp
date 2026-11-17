@@ -1,6 +1,6 @@
 /**
- * Übernimmt Personen aus API-Antworten in die Registry – IMMER vor dem Schwärzen der Texte
- * derselben Antwort, damit deren Namen im Wörterbuch stehen.
+ * Moves people from API responses into the registry – ALWAYS before redacting the texts
+ * of the same response, so that their names are in the dictionary.
  */
 import type { ApiMessage, ApiPublishedBy, ApiThread } from "../api/types";
 import type { AppContext } from "../context";
@@ -25,14 +25,14 @@ export function registerThread(r: PersonRegistry, t: ApiThread) {
   for (const m of t.Messages?.EntityArray ?? []) registerMessage(r, m);
 }
 
-// ---------- Kurs-Teilnehmer:innen (Namens-Wörterbuch für Kurs-Inhalte) ----------
+// ---------- Course participants (name dictionary for course content) ----------
 
 const warmed = new WeakMap<AppContext, Map<number, Promise<void>>>();
 
 /**
- * Registriert alle Teilnehmer:innen eines Kurses (einmal pro Prozess und Kurs), damit ihre Namen in
- * Kurs-Inhalten (Dateien, Ankündigungen, Aufgaben) erkannt werden – auch wenn es nie eine gemeinsame
- * Unterhaltung gab. Best effort: Fehler (z. B. keine Berechtigung) brechen nichts ab.
+ * Registers all participants of a course (once per process and course) so that their names are
+ * recognized in course content (files, announcements, tasks) – even without any shared conversation.
+ * Best effort: errors (e.g. missing permission) never abort anything.
  */
 export function warmCourse(ctx: AppContext, courseId: number | null | undefined): Promise<void> {
   if (!courseId) return Promise.resolve();
@@ -46,7 +46,7 @@ export function warmCourse(ctx: AppContext, courseId: number | null | undefined)
         for (const part of list) ctx.redactor.people.registerCourseParticipant(part);
       })
       .catch(() => {
-        log.warn("Kurs-Teilnehmer:innen nicht abrufbar – Schwärzung stützt sich auf bereits bekannte Namen");
+        log.warn("Course participants not available – redaction relies on names already known");
       });
     map.set(courseId, p);
   }
@@ -57,7 +57,7 @@ export async function warmCourses(ctx: AppContext, courseIds: Iterable<number | 
   await Promise.all([...new Set(courseIds)].map((id) => warmCourse(ctx, id)));
 }
 
-/** Vor dem Download: alle Personen registrieren, die im Dokument stehen könnten. */
+/** Before a download: register everyone who might appear in the document. */
 export async function warmForFileRef(ctx: AppContext, ref: string) {
   const src = parseRef(ref);
   try {
@@ -78,6 +78,6 @@ export async function warmForFileRef(ctx: AppContext, ref: string) {
       }
     }
   } catch {
-    // Download selbst meldet ggf. den eigentlichen Fehler
+    // the download itself reports the actual error, if any
   }
 }

@@ -10,16 +10,17 @@ import { ToolError } from "../src/errors";
 import { FileCache } from "../src/files/cache";
 import { extractText } from "../src/files/extract";
 import { formatRef, parseRef } from "../src/files/refs";
-import { extractLinks, filenameFromDisposition, readLimited } from "../src/websession/browser";
 import { downloadFile, listCourseFiles } from "../src/tools/files";
 import { getThread } from "../src/tools/messages";
-import { FORBIDDEN_NAMES, fakeContext } from "./fixtures";
+import { extractLinks, filenameFromDisposition, readLimited } from "../src/websession/browser";
 import { SECRET_MARKERS, createFakeWeb, makePdf } from "./fakeWeb";
+import { FORBIDDEN_NAMES, fakeContext } from "./fixtures";
 
 const texts = (r: CallToolResult) => r.content.filter((c) => c.type === "text").map((c) => (c as { text: string }).text);
+type Structured = Record<string, unknown> & { text?: string };
 
-describe("Bausteine", () => {
-  test("fileRefs: Format und Parsing, unbekannte Formate → FILE_REF_UNKNOWN", () => {
+describe("building blocks", () => {
+  test("fileRefs: format and parsing, unknown formats → FILE_REF_UNKNOWN", () => {
     for (const s of [
       { kind: "element", elementId: 1 },
       { kind: "assignment", elementId: 1, fileId: 2 },
@@ -33,13 +34,13 @@ describe("Bausteine", () => {
     }
   });
 
-  test("Content-Disposition: filename* (UTF-8) vor filename", () => {
-    expect(filenameFromDisposition("attachment; filename*=UTF-8''Br%C3%BCche.pdf; filename=\"x.pdf\"")).toBe("Brüche.pdf");
-    expect(filenameFromDisposition('inline; filename="Blatt 1.docx"')).toBe("Blatt 1.docx");
+  test("Content-Disposition: filename* (UTF-8) before filename", () => {
+    expect(filenameFromDisposition("attachment; filename*=UTF-8''Caf%C3%A9.pdf; filename=\"x.pdf\"")).toBe("Café.pdf");
+    expect(filenameFromDisposition('inline; filename="Sheet 1.docx"')).toBe("Sheet 1.docx");
     expect(filenameFromDisposition(null)).toBeUndefined();
   });
 
-  test("extractLinks bevorzugt DownloadRedirect und ignoriert Icons", () => {
+  test("extractLinks prefers DownloadRedirect and ignores icons", () => {
     const l = extractLinks(
       '<img src="/App_Themes/Default/images/file.gif"><a href="https://filerepository.itslearning.com/a?Download=1">x</a><a href="/Proxy/DownloadRedirect.ashx?LearningObjectId=1&amp;LearningObjectInstanceId=2">y</a><iframe src="/inner.aspx"></iframe>',
       "https://resource.itslearning.com/File/View.aspx",
@@ -49,19 +50,19 @@ describe("Bausteine", () => {
     expect(l.iframes).toEqual(["https://resource.itslearning.com/inner.aspx"]);
   });
 
-  test("readLimited bricht bei Überschreitung ab", async () => {
+  test("readLimited aborts when the limit is exceeded", async () => {
     await expect(readLimited(new Response("x".repeat(2000)), 1000)).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
     await expect(readLimited(new Response("x", { headers: { "content-length": "99999" } }), 1000)).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
     expect((await readLimited(new Response("abc"), 1000)).byteLength).toBe(3);
   });
 
-  test("PDF-Textextraktion (unpdf)", async () => {
-    expect(await extractText(makePdf("Hallo Welt 123"), "application/pdf", "a.pdf")).toContain("Hallo Welt 123");
+  test("PDF text extraction (unpdf)", async () => {
+    expect(await extractText(makePdf("Hello world 123"), "application/pdf", "a.pdf")).toContain("Hello world 123");
   });
 });
 
 describe("itslearning_list_course_files", () => {
-  test("Root-Ordner mit fileRefs für Elemente", async () => {
+  test("root folder with fileRefs for elements", async () => {
     const res = await listCourseFiles(await fakeContext(), { courseId: 11 });
     expect(res.items.map((i) => [i.elementId, i.kind, i.fileRef])).toEqual([
       [7300, "folder", undefined],
@@ -70,7 +71,7 @@ describe("itslearning_list_course_files", () => {
     ]);
   });
 
-  test("rekursiv inkl. Unterordner", async () => {
+  test("recursive including subfolders", async () => {
     const res = await listCourseFiles(await fakeContext(), { courseId: 11, recursive: true });
     const sub = res.items.find((i) => i.elementId === 7203);
     expect(sub).toMatchObject({ depth: 1, parentFolderId: 7300, fileRef: "e_7203" });
@@ -78,16 +79,18 @@ describe("itslearning_list_course_files", () => {
 });
 
 describe("itslearning_download_file", () => {
-  test("Kurs-Datei über die komplette Web-Kette; Text geschwärzt, kein Blob im auto-Modus", async () => {
+  test("course file via the full web chain; text redacted and in structuredContent, no blob in auto mode", async () => {
     const web = createFakeWeb();
     const res = await downloadFile(await fakeContext({}, { web }), { fileRef: "e_7201" });
-    const meta = res.structuredContent as Record<string, unknown>;
-    expect(meta).toMatchObject({ kind: "file", name: "Arbeitsblatt_Ich_Ich.txt", mimeType: "text/plain", textIncluded: true, blobIncluded: false, cached: false });
+    const meta = res.structuredContent as Structured;
+    expect(meta).toMatchObject({ kind: "file", name: "Worksheet_Me_Me.txt", mimeType: "text/plain", textIncluded: true, blobIncluded: false, cached: false });
+    // Fix: clients that only show structuredContent (e.g. Claude Code) must still get the text
+    expect(meta.text).toBe("Worksheet for Me\nQuestions to [email]\nTask 1: 3/4 + 1/8");
+    expect(meta.textChars).toBe(meta.text!.length);
     const body = texts(res).join("\n");
-    expect(body).toContain("Arbeitsblatt für Ich");
-    expect(body).toContain("Fragen an [E-Mail]");
+    expect(body).toContain("Worksheet for Me");
     expect(res.content.some((c) => c.type === "resource")).toBe(false);
-    // Kette wirklich durchlaufen
+    // the chain was really traversed
     expect(web.stats.requests).toEqual(
       expect.arrayContaining([
         "demo.itslearning.com/SSO/MobileAppLoginSso.aspx",
@@ -98,7 +101,7 @@ describe("itslearning_download_file", () => {
     );
   });
 
-  test("abgelaufene Web-Session → automatisch neue Session", async () => {
+  test("expired web session → new session automatically", async () => {
     const web = createFakeWeb();
     const ctx = await fakeContext({}, { web });
     web.expireSessionOnce();
@@ -107,77 +110,81 @@ describe("itslearning_download_file", () => {
     expect(web.stats.loginPagesServed).toBe(1);
   });
 
-  test("Element ohne Datei → Seite mit geschwärztem Text", async () => {
+  test("element without a file → page with redacted text", async () => {
     const ctx = await fakeContext();
     const res = await downloadFile(ctx, { fileRef: "e_7202" });
     const data = res.structuredContent as { kind: string; text: string };
     expect(data.kind).toBe("page");
-    expect(data.text).toContain("Notiz");
+    expect(data.text).toContain("Note");
     expect(data.text).not.toMatch(/Mia|Sonnenfeld|FILETOKEN/);
   });
 
-  test("Kurs-Teilnehmer:innen schützen Namen, die nie in einer Unterhaltung vorkamen", async () => {
+  test("course participants protect names that never appeared in a conversation", async () => {
     const noThreads = { messageThreads: async () => ({ Threads: { EntityArray: [], Total: 0, CurrentPageIndex: 0, PageSize: 0 }, HasMore: false }) };
     const ctx = await fakeContext(noThreads);
-    expect(ctx.redactor.people.role(3001)).toBe("unknown"); // Mia ist noch unbekannt
+    expect(ctx.redactor.people.role(3001)).toBe("unknown"); // Mia is still unknown
     const res = await downloadFile(ctx, { fileRef: "e_7202" });
     const text = (res.structuredContent as { text: string }).text;
-    expect(text).toMatch(/Hallo Schüler:in-[0-9A-F]{4}/);
-    expect(ctx.redactor.people.role(2001)).toBe("teacher"); // Rolle aus dem Kurs-Profil
+    expect(text).toMatch(/Hello Student-[0-9A-F]{4}/);
+    expect(ctx.redactor.people.role(2001)).toBe("teacher"); // role from the course profile
   });
 
-  test("Teilnehmerliste nicht abrufbar → Download funktioniert trotzdem", async () => {
+  test("participant list unavailable → download still works", async () => {
     const ctx = await fakeContext({ courseParticipants: async () => Promise.reject(new Error("403")) });
     expect((await downloadFile(ctx, { fileRef: "e_7201" })).isError).toBeFalsy();
   });
 
-  test("Ordner → NOT_A_FILE", async () => {
+  test("folder → NOT_A_FILE", async () => {
     await expect(downloadFile(await fakeContext(), { fileRef: "e_7300" })).rejects.toMatchObject({ code: "NOT_A_FILE" });
   });
 
-  test("Nachrichten-Anhang (PDF): Text extrahiert und geschwärzt; mode=both liefert zusätzlich die Datei", async () => {
+  test("message attachment (PDF): text extracted and redacted; mode=both also returns the file", async () => {
     const ctx = await fakeContext();
-    await getThread(ctx, { threadId: 9001 }); // registriert Personen + merkt sich die Anhang-URL
+    await getThread(ctx, { threadId: 9001 }); // registers people + remembers the attachment URL
     const res = await downloadFile(ctx, { fileRef: "m_9001_502", mode: "both" });
-    expect(res.structuredContent).toMatchObject({ mimeType: "application/pdf", name: "Notizen_Ich_Ich.pdf", textIncluded: true, blobIncluded: true });
-    const body = texts(res).join("\n");
-    expect(body).toMatch(/Notizen von Ich und Schüler:in-[0-9A-F]{4}/);
+    expect(res.structuredContent).toMatchObject({ mimeType: "application/pdf", name: "Notes_Me_Me.pdf", textIncluded: true, blobIncluded: true });
+    expect((res.structuredContent as Structured).text).toMatch(/Notes by Me and Student-[0-9A-F]{4}/);
     const blob = res.content.find((c) => c.type === "resource") as { resource: { blob: string; uri: string } };
     expect(blob.resource.uri).toBe("itslearning-file:m_9001_502");
     expect(Buffer.from(blob.resource.blob, "base64").subarray(0, 5).toString()).toBe("%PDF-");
   });
 
-  test("Nachrichten-Anhang auch ohne vorheriges Listing (zustandslos auflösbar)", async () => {
+  test("message attachment also without prior listing (stateless resolution)", async () => {
     const res = await downloadFile(await fakeContext(), { fileRef: "m_9001_502", mode: "text" });
     expect(res.structuredContent).toMatchObject({ textIncluded: true });
   });
 
-  test("Aufgaben-Anhang über Redirect; Name aus filename* geschwärzt", async () => {
+  test("task attachment via redirect; name from filename* redacted", async () => {
     const res = await downloadFile(await fakeContext(), { fileRef: "a_7001_1" });
-    expect(res.structuredContent).toMatchObject({ name: "Brüche_Ich.txt", mimeType: "text/plain" });
-    expect(texts(res).join("\n")).toContain("Aufgabe von Lehrkraft Lindqvist für Ich");
+    expect(res.structuredContent).toMatchObject({ name: "Café_Me.txt", mimeType: "text/plain", text: "Task from Teacher Lindqvist for Me" });
   });
 
-  test("Bulletin-Bild: im auto-Modus als Bild", async () => {
+  test("bulletin image: returned as image in auto mode, no text field", async () => {
     const res = await downloadFile(await fakeContext(), { fileRef: "i_12_6001_0" });
     expect(res.structuredContent).toMatchObject({ kind: "image", mimeType: "image/png", blobIncluded: true });
+    expect(res.structuredContent).not.toHaveProperty("text");
     expect(res.content.some((c) => c.type === "image")).toBe(true);
   });
 
-  test("mode=text bei nicht extrahierbarer Datei → NOT_A_FILE", async () => {
+  test("mode=text for a non-extractable file → NOT_A_FILE", async () => {
     await expect(downloadFile(await fakeContext(), { fileRef: "i_12_6001_0", mode: "text" })).rejects.toMatchObject({ code: "NOT_A_FILE" });
   });
 
-  test("Größenlimit", async () => {
+  test("size limit", async () => {
     await expect(downloadFile(await fakeContext({}, { maxBytes: 10 }), { fileRef: "e_7201" })).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
   });
 
-  test("unbekannte Nachricht → FILE_REF_UNKNOWN", async () => {
+  test("unknown message → FILE_REF_UNKNOWN", async () => {
     await expect(downloadFile(await fakeContext(), { fileRef: "m_9001_999" })).rejects.toMatchObject({ code: "FILE_REF_UNKNOWN" });
+  });
+
+  test("German labels for file names and fallbacks", async () => {
+    const res = await downloadFile(await fakeContext({}, { language: "de" }), { fileRef: "e_7201" });
+    expect(res.structuredContent).toMatchObject({ name: "Worksheet_Ich_Ich.txt", text: "Worksheet for Ich\nQuestions to [E-Mail]\nTask 1: 3/4 + 1/8" });
   });
 });
 
-describe("Cache und DOWNLOAD_DIR", () => {
+describe("cache and DOWNLOAD_DIR", () => {
   let dir: string;
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "itsl-files-"));
@@ -186,7 +193,7 @@ describe("Cache und DOWNLOAD_DIR", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  test("zweiter Download kommt aus dem Cache", async () => {
+  test("the second download comes from the cache", async () => {
     const web = createFakeWeb();
     const ctx = await fakeContext({}, { web, cache: new FileCache(join(dir, "cache")) });
     await downloadFile(ctx, { fileRef: "e_7201" });
@@ -196,7 +203,7 @@ describe("Cache und DOWNLOAD_DIR", () => {
     expect(web.stats.requests.length).toBe(before);
   });
 
-  test("Cache läuft nach TTL ab", async () => {
+  test("cache expires after the TTL", async () => {
     let now = 0;
     const cache = new FileCache(join(dir, "cache"), 1000, 10_000_000, () => now);
     cache.put("e_1", { name: "a.txt", mimeType: "text/plain", size: 1 }, new Uint8Array([65]));
@@ -205,18 +212,18 @@ describe("Cache und DOWNLOAD_DIR", () => {
     expect(cache.get("e_1")).toBeUndefined();
   });
 
-  test("DOWNLOAD_DIR: Datei mit geschwärztem Namen ablegen", async () => {
+  test("DOWNLOAD_DIR: stores the file with a redacted name", async () => {
     const ctx = await fakeContext({}, { downloadDir: join(dir, "dl") });
     const res = await downloadFile(ctx, { fileRef: "e_7201" });
     const files = await readdir(join(dir, "dl"));
-    expect(files).toEqual(["e_7201_Arbeitsblatt_Ich_Ich.txt"]);
-    expect((res.structuredContent as { savedTo: string }).savedTo).toContain("e_7201_Arbeitsblatt_Ich_Ich.txt");
-    expect(await readFile(join(dir, "dl", files[0]!), "utf8")).toContain("Jonas"); // Datei-Inhalt selbst ist NICHT geschwärzt (dokumentiert)
+    expect(files).toEqual(["e_7201_Worksheet_Me_Me.txt"]);
+    expect((res.structuredContent as { savedTo: string }).savedTo).toContain("e_7201_Worksheet_Me_Me.txt");
+    expect(await readFile(join(dir, "dl", files[0]!), "utf8")).toContain("Jonas"); // file content itself is NOT redacted (documented)
   });
 });
 
-describe("Leak-Test Dateien über das MCP-Protokoll", () => {
-  test("keine Tokens, Signaturen, Session-URLs oder Namen in Ausgaben (außer Blob-Inhalt)", async () => {
+describe("Leak test for files via the MCP protocol", () => {
+  test("no tokens, signatures, session URLs or names in output (except blob content)", async () => {
     const ctx = await fakeContext();
     const server = createServer(ctx);
     const client = new Client({ name: "leak-test", version: "0" });
@@ -239,8 +246,8 @@ describe("Leak-Test Dateien über das MCP-Protokoll", () => {
       outputs.push(JSON.stringify(res));
     }
     const all = outputs.join("\n");
-    for (const m of SECRET_MARKERS) expect(all, `Geheimnis "${m}"`).not.toContain(m);
+    for (const m of SECRET_MARKERS) expect(all, `secret "${m}"`).not.toContain(m);
     expect(all).not.toMatch(/filerepository|filecache|LoginSSO|ProcessLogin|MobileAppLoginSso|DownloadRedirect|itslearning\.com\//);
-    for (const n of FORBIDDEN_NAMES) expect(all, `Name "${n}"`).not.toMatch(new RegExp(`\\b${n}\\b`));
+    for (const n of FORBIDDEN_NAMES) expect(all, `name "${n}"`).not.toMatch(new RegExp(`\\b${n}\\b`));
   });
 });

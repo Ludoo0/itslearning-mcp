@@ -1,6 +1,6 @@
 /**
- * Erkennt anhand der öffentlichen Login-Seite, ob eine Instanz den nativen Login anbietet
- * oder nur Login über einen fremden Anbieter (SSO) – Spec 4.1.
+ * Detects from the public login page whether an instance offers native login
+ * or only login via an external identity provider (SSO) – spec 4.1.
  */
 export type LoginMode = "native" | "federated-only" | "unknown";
 

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { runSmoke } from "../scripts/smokeCore";
 import { createServer } from "../src/app";
 import type { AppContext } from "../src/context";
-import { runSmoke } from "../scripts/smokeCore";
 import { fakeContext } from "./fixtures";
 
 async function smoke(ctx: AppContext) {
@@ -17,47 +17,55 @@ async function smoke(ctx: AppContext) {
   return { ...res, output: lines.join("\n") };
 }
 
-describe("Smoke-Test (Logik, gegen Fake-Daten)", () => {
-  test("saubere Daten → 0 Leaks, alle Tools aufgerufen, Teilnehmerlisten-Status gemeldet", async () => {
+describe("smoke test (logic, against fake data)", () => {
+  test("clean data → 0 leaks, all tools called, participant list status reported", async () => {
     const res = await smoke(await fakeContext());
     expect(res.leaks).toBe(0);
     const tools = new Set(res.runs.map((r) => r.tool.split(" ")[0]));
     expect(tools.size).toBe(10);
-    expect(Object.values(res.participantsStatus).join(" ")).toContain("abrufbar");
-    // Ausgabe des Smoke-Tests selbst enthält keine Namen
+    expect(Object.values(res.participantsStatus).join(" ")).toContain("available");
+    // the smoke test's own output contains no names
     expect(res.output).not.toMatch(/Jonas|Beispielmann|Sabine|Mia|Sonnenfeld|Lindqvist/);
   });
 
-  test("absichtlich kaputte Schwärzung wird erkannt", async () => {
+  test("deliberately broken redaction is detected", async () => {
     const ctx = await fakeContext();
-    ctx.redactor.text = (s) => s ?? ""; // Schwärzung ausgeschaltet
+    ctx.redactor.text = (s) => s ?? ""; // redaction switched off
     const res = await smoke(ctx);
     expect(res.leaks).toBeGreaterThan(0);
     expect(res.output).toContain("❌");
-    expect(res.output).not.toMatch(/Jonas|Beispielmann|Sabine|Sonnenfeld/); // nur maskiert
+    expect(res.output).not.toMatch(/Jonas|Beispielmann|Sabine|Sonnenfeld/); // masked only
   });
 
-  test("--details zeigt bei Muster-Treffern nur die Struktur (x/9), keinen Inhalt", async () => {
+  test("--details shows only the structure (x/9) for pattern hits, no content", async () => {
     const ctx = await fakeContext();
     const orig = ctx.redactor.text.bind(ctx.redactor);
-    ctx.redactor.text = (s, max) => orig(s, max) + " Profil-ID PersonId=4711 von Mia";
+    ctx.redactor.text = (s, max) => orig(s, max) + " profile id PersonId=4711 of Mia";
     const res = await smoke(ctx);
-    expect(res.output).toMatch(/Struktur: ….*PersonId=9999/);
-    expect(res.output).not.toMatch(/4711|Mia|Profil/);
+    expect(res.output).toMatch(/structure: ….*PersonId=9999/);
+    expect(res.output).not.toMatch(/4711|Mia|profile/);
   });
 
-  test("Namens-Treffer: Struktur mit lesbaren Anzeigewörtern, Name nur als ⟨Treffer⟩", async () => {
+  test("name hits: structure with readable display words, the name only as ⟨hit⟩", async () => {
     const ctx = await fakeContext();
+    const orig = ctx.redactor.text.bind(ctx.redactor);
+    ctx.redactor.text = (s, max) => orig(s, max) + " Greetings to Teacher Lindqvist and Sabine";
+    const res = await smoke(ctx);
+    expect(res.output).toMatch(/teacher: first name: 1 hit\(s\) \(s\*+\)/);
+    expect(res.output).toMatch(/structure: ….*Teacher xxxxxxxxx xxx ⟨hit⟩/);
+    expect(res.output).not.toMatch(/Sabine|Lindqvist|Greetings/);
+  });
+
+  test("German display words stay readable too", async () => {
+    const ctx = await fakeContext({}, { language: "de" });
     const orig = ctx.redactor.text.bind(ctx.redactor);
     ctx.redactor.text = (s, max) => orig(s, max) + " Grüße an Lehrkraft Lindqvist und Sabine";
     const res = await smoke(ctx);
-    expect(res.output).toMatch(/Lehrkraft: Vorname: 1 Treffer \(s\*+\)/);
-    expect(res.output).toMatch(/Struktur: ….*Lehrkraft xxxxxxxxx xxx ⟨Treffer⟩/);
-    expect(res.output).not.toMatch(/Sabine|Lindqvist|Grüße/);
+    expect(res.output).toMatch(/structure: ….*Lehrkraft xxxxxxxxx xxx ⟨hit⟩/);
   });
 
-  test("Kurs-Teilnehmer:innen im Format 'Nachname, Vorname': Nachname der Lehrkraft ist kein Fehlalarm", async () => {
-    // Fake-Kurs 12 liefert "Lindqvist, Sabine" – "Lehrkraft Lindqvist" in Ausgaben ist erlaubt
+  test("course participants as 'Last, First': the teacher's last name is no false positive", async () => {
+    // fake course 12 returns "Lindqvist, Sabine" – "Teacher Lindqvist" in output is allowed
     const res = await smoke(await fakeContext());
     expect(res.leaks).toBe(0);
   });

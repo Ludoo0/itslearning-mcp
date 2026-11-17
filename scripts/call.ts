@@ -1,13 +1,13 @@
 /**
- * Dev-Werkzeug: startet den MCP-Server per stdio (wie ein echter MCP-Client) und ruft ein Tool auf.
+ * Dev tool: starts the MCP server via stdio (like a real MCP client) and calls a tool.
  *
- *   bun run call                                   → Tools auflisten
+ *   bun run call                                   → list tools
  *   bun run call itslearning_list_tasks limit=5
  *   bun run call itslearning_get_task elementId=123
- *   (JSON geht auch: '{"limit":5}')
+ *   (JSON works too: '{"limit":5}')
  *
- * Zugangsdaten: ITSL_BASE_URL / ITSL_USERNAME / ITSL_PASSWORD aus der Umgebung, sonst interaktive Abfrage.
- * Login-Status landet in ./.data (DATA_DIR), damit nicht jedes Mal das Passwort nötig ist.
+ * Credentials: ITSL_BASE_URL / ITSL_USERNAME / ITSL_PASSWORD from the environment, otherwise interactive prompt.
+ * The login state is stored in ./.data (DATA_DIR) so the password is not needed every time.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -15,7 +15,7 @@ import { BASE, promptCredentials } from "./lib";
 
 const [toolName, ...argTokens] = process.argv.slice(2);
 
-/** Argumente als JSON ('{"limit":5}') oder als key=value-Paare (limit=5 status=all) – letzteres ist PowerShell-freundlich. */
+/** Arguments as JSON ('{"limit":5}') or as key=value pairs (limit=5 status=all) – the latter is PowerShell-friendly. */
 function parseArgs(tokens: string[]): Record<string, unknown> {
   const joined = tokens.join(" ").trim();
   if (!joined) return {};
@@ -23,7 +23,7 @@ function parseArgs(tokens: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const t of tokens) {
     const i = t.indexOf("=");
-    if (i <= 0) throw new Error(`Ungültiges Argument "${t}" – erwartet key=value`);
+    if (i <= 0) throw new Error(`Invalid argument "${t}" – expected key=value`);
     const v = t.slice(i + 1);
     out[t.slice(0, i)] = v === "true" ? true : v === "false" ? false : /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
   }
@@ -48,7 +48,7 @@ async function main() {
     }
     env.ITSL_BASE_URL = BASE;
   } else {
-    // Nur Tools auflisten: kein echter Login nötig
+    // Only listing tools: no real login needed
     env.ITSL_BASE_URL ??= "https://example.itslearning.com";
     env.ITSL_USERNAME ??= "-";
     env.ITSL_PASSWORD ??= "-";
@@ -63,17 +63,17 @@ async function main() {
 
   if (!toolName) {
     const { tools } = await client.listTools();
-    for (const t of tools) console.log(`${t.name}\n  ${t.description}\n  Eingabe: ${JSON.stringify(t.inputSchema.properties ?? {})}\n`);
+    for (const t of tools) console.log(`${t.name}\n  ${t.description}\n  Input: ${JSON.stringify(t.inputSchema.properties ?? {})}\n`);
   } else {
     const args = parseArgs(argTokens);
     const res = await client.callTool({ name: toolName, arguments: args });
     const savedTo = (res.structuredContent as { savedTo?: string } | undefined)?.savedTo;
     for (const c of res.content as { type: string; text?: string; data?: string; mimeType?: string; resource?: { blob?: string; mimeType?: string } }[]) {
       if (c.type === "text") console.log(c.text);
-      else if (c.type === "image") console.log(`[Bild: ${c.mimeType}, ${Math.round(((c.data?.length ?? 0) * 3) / 4 / 1024)} KB – Inhalt nicht angezeigt]`);
+      else if (c.type === "image") console.log(`[image: ${c.mimeType}, ${Math.round(((c.data?.length ?? 0) * 3) / 4 / 1024)} KB – content not shown]`);
       else if (c.type === "resource") {
         const kb = Math.round(((c.resource?.blob?.length ?? 0) * 3) / 4 / 1024);
-        console.log(`[Datei: ${c.resource?.mimeType}, ${kb} KB – ${savedTo ? `gespeichert unter ${savedTo}` : "Inhalt nicht angezeigt; mit DOWNLOAD_DIR=… speichern"}]`);
+        console.log(`[file: ${c.resource?.mimeType}, ${kb} KB – ${savedTo ? `saved to ${savedTo}` : "content not shown; set DOWNLOAD_DIR=… to save it"}]`);
       }
     }
     if (res.isError) process.exitCode = 1;
@@ -82,6 +82,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(`Fehler: ${e instanceof Error ? e.message : e}`);
+  console.error(`Error: ${e instanceof Error ? e.message : e}`);
   process.exit(1);
 });

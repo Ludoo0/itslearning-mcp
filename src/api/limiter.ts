@@ -1,4 +1,4 @@
-/** Begrenzt parallele Anfragen und erzwingt einen Mindestabstand zwischen ihnen (Spec 7). */
+/** Limits concurrent requests and enforces a minimum interval between them (spec 7). */
 export class Limiter {
   private active = 0;
   private waiting: (() => void)[] = [];

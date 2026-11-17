@@ -1,7 +1,7 @@
 /**
- * REST-Client für /restapi/personal/… (Spec 2, 7, 9):
- * Bearer-Auth mit automatischem Refresh, Drosselung, TTL-Cache, Retries mit Backoff,
- * Abbildung von HTTP-Fehlern auf ToolError-Codes. Rohe Fehlertexte gehen nur bereinigt ins Log.
+ * REST client for /restapi/personal/… (spec 2, 7, 9):
+ * bearer auth with automatic refresh, rate limiting, TTL cache, retries with backoff,
+ * mapping of HTTP errors to ToolError codes. Raw error texts only reach the log after sanitizing.
  */
 import type { TokenStore } from "../auth/tokenStore";
 import { ToolError } from "../errors";
@@ -38,8 +38,8 @@ export class ApiClient {
   }
 
   /**
-   * GET, der einen Redirect erwartet (z. B. Datei-Download): liefert das Ziel aus dem Location-Header,
-   * ohne ihm zu folgen. Das Ziel ist ein Geheimnis (signierte URL) und darf nicht geloggt/ausgegeben werden.
+   * GET that expects a redirect (e.g. file download): returns the target from the Location header
+   * without following it. The target is a secret (signed URL) and must never be logged or returned.
    */
   async getRedirectLocation(template: string, params: Record<string, string | number>): Promise<string> {
     const path = template.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(String(params[k])));
@@ -55,16 +55,16 @@ export class ApiClient {
         this.auth.invalidate();
         continue;
       }
-      log.warn("Redirect erwartet", { endpoint: template, status: res.status });
-      throw res.ok ? new ToolError("NOT_A_FILE", "Unter dieser Referenz liegt keine Datei.") : mapStatus(res.status);
+      log.warn("Redirect expected", { endpoint: template, status: res.status });
+      throw res.ok ? new ToolError("NOT_A_FILE", "There is no file behind this reference.") : mapStatus(res.status);
     }
-    throw new ToolError("AUTH_FAILED", "Anmeldung bei itslearning fehlgeschlagen.");
+    throw new ToolError("AUTH_FAILED", "Login to itslearning failed.");
   }
 
-  /** GET mit JSON-Antwort. `template` (z. B. "/restapi/personal/courses/{courseId}/v1") wird fürs Log verwendet. */
+  /** GET with JSON response. `template` (e.g. "/restapi/personal/courses/{courseId}/v1") is used for logging. */
   async get<T>(template: string, params: Record<string, string | number> = {}, query: Query = {}, opts: { ttlS?: number } = {}): Promise<T> {
     const path = template.replace(/\{(\w+)\}/g, (_, k) => {
-      if (params[k] === undefined) throw new Error(`Parameter ${k} fehlt für ${template}`);
+      if (params[k] === undefined) throw new Error(`Parameter ${k} missing for ${template}`);
       return encodeURIComponent(String(params[k]));
     });
     const url = new URL(this.cfg.baseUrl + path);
@@ -92,8 +92,8 @@ export class ApiClient {
           await this.sleep(backoffMs(attempt));
           continue;
         }
-        log.warn("Netzwerkfehler", { endpoint: template, error: e instanceof Error ? e.name : "unknown" });
-        throw new ToolError("UPSTREAM_ERROR", "itslearning ist nicht erreichbar.");
+        log.warn("Network error", { endpoint: template, error: e instanceof Error ? e.name : "unknown" });
+        throw new ToolError("UPSTREAM_ERROR", "itslearning is not reachable.");
       }
       log.debug("GET", { endpoint: template, status: res.status, ms: Date.now() - t0 });
 
@@ -102,7 +102,7 @@ export class ApiClient {
         try {
           return JSON.parse(text) as T;
         } catch {
-          throw new ToolError("UPSTREAM_ERROR", "Unerwartete Antwort von itslearning (kein JSON).", res.status);
+          throw new ToolError("UPSTREAM_ERROR", "Unexpected response from itslearning (not JSON).", res.status);
         }
       }
 
@@ -117,7 +117,7 @@ export class ApiClient {
       }
 
       const body = await res.text().catch(() => "");
-      log.warn("API-Fehler", { endpoint: template, status: res.status, error: sanitizeErrorText(body) });
+      log.warn("API error", { endpoint: template, status: res.status, error: sanitizeErrorText(body) });
       throw mapStatus(res.status);
     }
   }
@@ -137,16 +137,16 @@ function retryAfterMs(res: Response): number | undefined {
 function mapStatus(status: number): ToolError {
   switch (status) {
     case 401:
-      return new ToolError("AUTH_FAILED", "Anmeldung bei itslearning fehlgeschlagen – Zugangsdaten prüfen.", status);
+      return new ToolError("AUTH_FAILED", "Login to itslearning failed – check the credentials.", status);
     case 403:
-      return new ToolError("FORBIDDEN", "Kein Zugriff auf dieses Element.", status);
+      return new ToolError("FORBIDDEN", "No access to this element.", status);
     case 404:
-      return new ToolError("NOT_FOUND", "Element nicht gefunden.", status);
+      return new ToolError("NOT_FOUND", "Element not found.", status);
     case 429:
-      return new ToolError("RATE_LIMITED", "itslearning drosselt Anfragen – später erneut versuchen.", status);
+      return new ToolError("RATE_LIMITED", "itslearning is throttling requests – try again later.", status);
     default:
       return status >= 500
-        ? new ToolError("UPSTREAM_ERROR", "itslearning ist nicht erreichbar.", status)
-        : new ToolError("UPSTREAM_ERROR", `itslearning hat die Anfrage abgelehnt (HTTP ${status}).`, status);
+        ? new ToolError("UPSTREAM_ERROR", "itslearning is not reachable.", status)
+        : new ToolError("UPSTREAM_ERROR", `itslearning rejected the request (HTTP ${status}).`, status);
   }
 }

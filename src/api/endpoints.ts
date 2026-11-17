@@ -1,4 +1,4 @@
-/** Typisierte Aufrufe der verifizierten Endpunkte (docs/itslearning-api.md). */
+/** Typed calls of the verified endpoints (docs/itslearning-api.md). */
 import { ToolError } from "../errors";
 import type { ApiClient } from "./client";
 import type {
@@ -29,7 +29,7 @@ export class Itslearning {
     return this.api.get<ApiPerson>(`${P}/person/v1`, {}, {}, { ttlS: 900 });
   }
 
-  /** v1 = aktuelle Kurse als Schüler:in; v2 = inkl. ehemaliger Kurse. */
+  /** v1 = current courses as a student; v2 = including former courses. */
   courses(includeInactive: boolean): Promise<ApiCourse[]> {
     return this.all<ApiCourse>(includeInactive ? `${P}/courses/v2` : `${P}/courses/v1`, {}, { ttlS: 900 });
   }
@@ -51,7 +51,7 @@ export class Itslearning {
     return this.api.get<ApiAssignment>(`${P}/assignments/{elementId}/v1`, { elementId });
   }
 
-  /** Neuigkeiten über alle Kurse, inkl. Light Bulletins. */
+  /** News across all courses, including light bulletins. */
   notificationStream(pageIndex: number, pageSize: number): Promise<Paged<ApiNotification>> {
     return this.api.get(`${P}/notifications/stream/v2`, {}, { showLightBulletins: true, PageIndex: pageIndex, PageSize: pageSize });
   }
@@ -68,22 +68,22 @@ export class Itslearning {
     return this.all<ApiElement>(`${P}/courses/bulletins/{bulletinId}/elements/v1`, { bulletinId });
   }
 
-  /** Nachrichten-Threads (v4). `fromSortIndex` für Folgeseiten (Semantik ⏳: SortIndex des letzten Threads). */
+  /** Message threads (v4). `fromSortIndex` for further pages (semantics ⏳: SortIndex of the last thread). */
   messageThreads(pageSize: number, fromSortIndex?: number): Promise<ApiThreadList> {
     return this.api.get(`${P}/instantmessages/messagethreads/v4`, {}, { pageSize, fromSortIndex });
   }
 
-  /** Nachrichten eines Threads (v3). `fromId` für ältere Nachrichten (Semantik ⏳). */
+  /** Messages of a thread (v3). `fromId` for older messages (semantics ⏳). */
   threadMessages(threadId: number, pageSize: number, fromId?: number): Promise<ApiThreadMessages> {
     return this.api.get(`${P}/instantmessages/messagethreads/{threadId}/messages/v3`, { threadId }, { pageSize, fromId });
   }
 
-  /** Teilnehmer:innen eines Kurses – nur für das Namens-Wörterbuch (Schwärzung), nie für Ausgaben. */
+  /** Participants of a course – only for the name dictionary (redaction), never for output. */
   courseParticipants(courseId: number): Promise<ApiCourseParticipant[]> {
     return this.all<ApiCourseParticipant>(`${P}/courses/{courseId}/participants/v1`, { courseId }, { ttlS: 900 });
   }
 
-  /** Inhalt des Root-Ordners eines Kurses. */
+  /** Content of a course root folder. */
   async courseResources(courseId: number): Promise<ApiResource[]> {
     const res = await this.api.get<ApiResourceList>(`${P}/courses/{courseId}/resources/v1`, { courseId }, { PageIndex: 0, PageSize: PAGE_SIZE });
     return res.Resources?.EntityArray ?? [];
@@ -94,24 +94,24 @@ export class Itslearning {
     return res.Resources?.EntityArray ?? [];
   }
 
-  /** Einzelne Ressource inkl. ContentUrl (Ausgangspunkt für den Download-Flow). */
+  /** Single resource including ContentUrl (starting point of the download flow). */
   resource(elementId: number): Promise<ApiResource> {
     return this.api.get<ApiResource>(`${P}/courses/resources/{resourceId}/v1`, { resourceId: elementId });
   }
 
-  /** Kurzlebige SSO-URL in die Web-Oberfläche (GEHEIM – nie ausgeben/loggen). Nicht cachen. */
+  /** Short-lived SSO URL into the web interface (SECRET – never return/log). Not cached. */
   async ssoUrl(url: string): Promise<string> {
     const res = await this.api.get<{ Url?: string }>(`${P}/sso/url/v1`, {}, { url }, { ttlS: 0 });
-    if (!res.Url) throw new ToolError("UPSTREAM_ERROR", "itslearning hat keine Anmelde-URL geliefert.");
+    if (!res.Url) throw new ToolError("UPSTREAM_ERROR", "itslearning did not return a login URL.");
     return res.Url;
   }
 
-  /** Ziel-URL eines Aufgaben-Anhangs (GEHEIM). */
+  /** Target URL of a task attachment (SECRET). */
   assignmentFileLocation(elementId: number, fileId: number): Promise<string> {
     return this.api.getRedirectLocation(`${P}/assignments/{elementId}/files/{fileId}/v1`, { elementId, fileId });
   }
 
-  /** Holt alle Seiten einer Paged-Liste (mit Obergrenze, damit nichts ausufert). */
+  /** Fetches all pages of a paged list (with an upper bound so nothing gets out of hand). */
   private async all<T>(template: string, params: Record<string, string | number> = {}, opts: { ttlS?: number } = {}): Promise<T[]> {
     const out: T[] = [];
     for (let page = 0; page < MAX_PAGES; page++) {

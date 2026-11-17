@@ -8,72 +8,83 @@ import { getTask, listTasks } from "../src/tools/tasks";
 import { fakeContext } from "./fixtures";
 
 describe("itslearning_list_courses", () => {
-  test("aktuelle Kurse, Favoriten zuerst", async () => {
+  test("current courses, favorites first", async () => {
     const res = await listCourses(await fakeContext(), {});
     expect(res.courses.map((c) => c.courseId)).toEqual([12, 11]);
     expect(res.courses[0]).toMatchObject({ starred: true, active: true, newBulletins: 1 });
   });
 
-  test("includeInactive markiert ehemalige Kurse", async () => {
+  test("includeInactive marks former courses", async () => {
     const res = await listCourses(await fakeContext(), { includeInactive: true });
     expect(res.total).toBe(3);
     expect(res.courses.find((c) => c.courseId === 9)?.active).toBe(false);
   });
 
-  test("Favoriten-Fehler bricht das Tool nicht ab", async () => {
+  test("a favorites error does not break the tool", async () => {
     const ctx = await fakeContext({ starredCourseIds: async () => Promise.reject(new Error("x")) });
     expect((await listCourses(ctx, {})).total).toBe(2);
   });
 });
 
 describe("itslearning_list_tasks", () => {
-  test("offen, nach Frist sortiert, ohne Frist zuletzt, überfällig markiert", async () => {
+  test("open tasks sorted by deadline, no deadline last, overdue flagged", async () => {
     const res = await listTasks(await fakeContext(), {});
-    expect(res.tasks.map((t) => t.elementId)).toEqual([7002, 7001, 7004]);
-    expect(res.tasks[0]).toMatchObject({ overdue: true, type: "activity", courseId: 12 });
-    expect(res.tasks[1]).toMatchObject({ overdue: false, homework: true, type: "assignment" });
+    expect(res.tasks.map((t) => t.elementId)).toEqual([7005, 7006, 7002, 7001, 7004]);
+    expect(res.tasks[2]).toMatchObject({ elementId: 7002, overdue: true, type: "activity", courseId: 12 });
+    expect(res.tasks[3]).toMatchObject({ elementId: 7001, overdue: false, homework: true, type: "assignment" });
   });
 
-  test("Freitext ist geschwärzt", async () => {
+  test("free text is redacted", async () => {
     const res = await listTasks(await fakeContext(), {});
-    expect(res.tasks[0]!.descriptionPreview).toBe("Bitte an Ich: Kapitel 3 lesen");
+    expect(res.tasks.find((t) => t.elementId === 7002)!.descriptionPreview).toBe("Please, Me: read chapter 3");
   });
 
-  test("status=all, Filter und Paging", async () => {
+  test("status=all, filters and paging", async () => {
     const ctx = await fakeContext();
-    expect((await listTasks(ctx, { status: "all" })).total).toBe(4);
-    expect((await listTasks(ctx, { dueWithinDays: 3 })).tasks.map((t) => t.elementId)).toEqual([7002, 7001]);
+    expect((await listTasks(ctx, { status: "all" })).total).toBe(6);
+    expect((await listTasks(ctx, { dueWithinDays: 3 })).tasks.map((t) => t.elementId)).toEqual([7005, 7006, 7002, 7001]);
     expect((await listTasks(ctx, { homeworkOnly: true })).tasks.map((t) => t.elementId)).toEqual([7001]);
-    expect((await listTasks(ctx, { courseId: 11 })).tasks.map((t) => t.elementId)).toEqual([7001, 7004]);
+    expect((await listTasks(ctx, { courseId: 11 })).tasks.map((t) => t.elementId)).toEqual([7006, 7001, 7004]);
     const page = await listTasks(ctx, { limit: 2, offset: 0 });
-    expect(page).toMatchObject({ total: 3, hasMore: true });
+    expect(page).toMatchObject({ total: 5, hasMore: true });
+  });
+
+  test("activeCoursesOnly hides leftovers from inactive courses", async () => {
+    const res = await listTasks(await fakeContext(), { activeCoursesOnly: true });
+    expect(res.tasks.map((t) => t.elementId)).toEqual([7006, 7002, 7001, 7004]);
   });
 });
 
 describe("itslearning_get_task", () => {
-  test("Details mit geschwärzter Aufgabenstellung", async () => {
+  test("details with redacted instructions", async () => {
     const res = await getTask(await fakeContext(), { elementId: 7001 });
-    expect(res).toMatchObject({ title: "Arbeitsblatt Brüche", detailsUnavailable: false, canSubmit: true, hasAnswer: false, files: [{ fileRef: "a_7001_1", name: "Brüche_Ich.txt", kind: "file" }] });
+    expect(res).toMatchObject({
+      title: "Fractions worksheet",
+      detailsUnavailable: false,
+      canSubmit: true,
+      hasAnswer: false,
+      files: [{ fileRef: "a_7001_1", name: "Fractions_Me.txt", kind: "file" }],
+    });
     const text = (res as { text: string }).text;
-    expect(text).toContain("Hallo Ich,");
-    expect(text).toContain("[dieses Blatt](https://example.org/blatt.pdf)");
-    expect(text).toContain("[E-Mail]");
-    expect(text).toContain("[Telefon]");
+    expect(text).toContain("Hello Me,");
+    expect(text).toContain("[this sheet](https://example.org/sheet.pdf)");
+    expect(text).toContain("[email]");
+    expect(text).toContain("[phone]");
     expect(text).not.toMatch(/Jonas|Beispielmann|SECRET123|filerepository|demo\.itslearning/);
   });
 
-  test("403 (CustomActivity) → Basisdaten mit detailsUnavailable", async () => {
+  test("403 (CustomActivity) → base data with detailsUnavailable", async () => {
     const res = await getTask(await fakeContext(), { elementId: 7002 });
     expect(res).toMatchObject({ elementId: 7002, detailsUnavailable: true, type: "activity" });
   });
 
-  test("unbekannte Aufgabe → NOT_FOUND / FORBIDDEN", async () => {
+  test("unknown task → NOT_FOUND / FORBIDDEN", async () => {
     const err = (await getTask(await fakeContext(), { elementId: 999 }).catch((e) => e)) as ToolError;
     expect(err).toBeInstanceOf(ToolError);
   });
 });
 
-describe("MCP-Protokoll (in-memory)", () => {
+describe("MCP protocol (in-memory)", () => {
   async function connect() {
     const ctx = await fakeContext();
     const server = createServer(ctx);
@@ -83,7 +94,7 @@ describe("MCP-Protokoll (in-memory)", () => {
     return client;
   }
 
-  test("Tools sind registriert und read-only annotiert", async () => {
+  test("tools are registered and annotated read-only", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
@@ -99,24 +110,26 @@ describe("MCP-Protokoll (in-memory)", () => {
       "itslearning_overview",
     ]);
     for (const t of tools) expect(t.annotations?.readOnlyHint).toBe(true);
+    // Tool descriptions are English
+    expect(tools.map((t) => t.description).join(" ")).not.toMatch(/[äöüß]|Aufgabe|Datei/);
   });
 
-  test("Aufruf liefert structuredContent und Text", async () => {
+  test("a call returns structuredContent and text", async () => {
     const client = await connect();
     const res = await client.callTool({ name: "itslearning_list_tasks", arguments: { limit: 1 } });
     expect(res.isError).toBeFalsy();
-    expect((res.structuredContent as { total: number }).total).toBe(3);
-    expect(JSON.stringify(res.content)).toContain("3 Aufgaben");
+    expect((res.structuredContent as { total: number }).total).toBe(5);
+    expect(JSON.stringify(res.content)).toContain("5 tasks");
   });
 
-  test("Fehler kommen als isError mit Code", async () => {
+  test("errors come back as isError with a code", async () => {
     const client = await connect();
     const res = await client.callTool({ name: "itslearning_get_task", arguments: { elementId: 999 } });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toMatch(/FORBIDDEN|NOT_FOUND/);
   });
 
-  test("ungültige Eingabe wird abgelehnt", async () => {
+  test("invalid input is rejected", async () => {
     const client = await connect();
     const res = await client.callTool({ name: "itslearning_list_tasks", arguments: { limit: 1000 } }).catch((e) => ({ isError: true, e }));
     expect(res.isError).toBe(true);

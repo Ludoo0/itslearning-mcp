@@ -8,7 +8,7 @@ import { redactFileName } from "./files";
 import { warmCourses } from "./people";
 import { handler, ok } from "./result";
 
-/** Status-Werte, die als erledigt gelten (gesehen bisher nur "NotStarted"; weitere Werte ⏳). */
+/** Status values treated as done (only "NotStarted" has been observed so far; more values ⏳). */
 const DONE_RE = /complet|done|finished|evaluat|submitted|assessed/i;
 const PREVIEW_LEN = 300;
 const TEXT_LEN = 20_000;
@@ -33,23 +33,29 @@ function taskType(t: { ElementType?: string | null }): TaskDto["type"] {
   return "other";
 }
 
-const courseIdOf = (t: ApiTask) => (t.LocationId && /course/i.test(t.LocationType ?? "") ? t.LocationId : undefined);
+export const courseIdOf = (t: ApiTask) => (t.LocationId && /course/i.test(t.LocationType ?? "") ? t.LocationId : undefined);
 const isOpen = (t: ApiTask) => !DONE_RE.test(t.Status ?? "");
-const deadlineMs = (d?: string | null) => {
+export const deadlineMs = (d?: string | null) => {
   if (!d) return undefined;
   const ms = Date.parse(d);
   return Number.isFinite(ms) ? ms : undefined;
 };
 
+/** Ids of the account's current courses (courses/v1). Tasks without a course are not affected by filters on this. */
+export async function activeCourseIds(ctx: AppContext): Promise<Set<number>> {
+  return new Set((await ctx.it.courses(false)).map((c) => c.CourseId));
+}
+
 export function toTaskDto(ctx: AppContext, t: ApiTask): TaskDto {
   const due = deadlineMs(t.Deadline);
   const preview = ctx.redactor.text(t.Description, PREVIEW_LEN);
+  const courseId = courseIdOf(t);
   return {
     taskId: t.TaskId,
     elementId: t.ElementId,
     title: ctx.redactor.title(t.Title),
     course: ctx.redactor.title(t.LocationTitle),
-    ...(t.LocationId && /course/i.test(t.LocationType ?? "") ? { courseId: t.LocationId } : {}),
+    ...(courseId ? { courseId } : {}),
     deadline: t.Deadline ?? null,
     overdue: due !== undefined && due < ctx.now().getTime() && isOpen(t),
     status: t.Status ?? "Unknown",
@@ -62,10 +68,11 @@ export function toTaskDto(ctx: AppContext, t: ApiTask): TaskDto {
 // ---------- list_tasks ----------
 
 export const listTasksInput = {
-  courseId: z.number().int().positive().optional().describe("Nur Aufgaben dieses Kurses"),
-  status: z.enum(["open", "all"]).default("open").describe("open = noch nicht erledigt (inkl. überfällig)"),
-  dueWithinDays: z.number().int().min(0).max(365).optional().describe("Nur Aufgaben mit Frist in den nächsten N Tagen (inkl. überfälliger)"),
-  homeworkOnly: z.boolean().default(false).describe("Nur als Hausaufgabe markierte Aufgaben"),
+  courseId: z.number().int().positive().optional().describe("Only tasks of this course"),
+  status: z.enum(["open", "all"]).default("open").describe("open = not done yet (including overdue)"),
+  dueWithinDays: z.number().int().min(0).max(365).optional().describe("Only tasks due within the next N days (including overdue ones)"),
+  homeworkOnly: z.boolean().default(false).describe("Only tasks marked as homework"),
+  activeCoursesOnly: z.boolean().default(false).describe("Only tasks from current courses (hides leftovers from previous school years)"),
   limit: z.number().int().min(1).max(100).default(20),
   offset: z.number().int().min(0).default(0),
 };
@@ -74,6 +81,7 @@ type ListTasksArgs = {
   status?: "open" | "all";
   dueWithinDays?: number;
   homeworkOnly?: boolean;
+  activeCoursesOnly?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -87,6 +95,13 @@ export async function listTasks(ctx: AppContext, args: ListTasksArgs) {
   let tasks = raw;
   if ((args.status ?? "open") === "open") tasks = tasks.filter(isOpen);
   if (args.homeworkOnly) tasks = tasks.filter((t) => t.Homework);
+  if (args.activeCoursesOnly) {
+    const active = await activeCourseIds(ctx);
+    tasks = tasks.filter((t) => {
+      const c = courseIdOf(t);
+      return c === undefined || active.has(c);
+    });
+  }
   if (args.dueWithinDays !== undefined) {
     const until = nowMs + args.dueWithinDays * 86_400_000;
     tasks = tasks.filter((t) => {
@@ -105,8 +120,8 @@ export async function listTasks(ctx: AppContext, args: ListTasksArgs) {
 // ---------- get_task ----------
 
 /**
- * Anhänge einer Aufgabe → fileRefs. Die genaue Form der Datei-Objekte ist noch nicht verifiziert (⏳),
- * daher tolerant: FileId/Id als ID, FileName/Name/Title als Name.
+ * Task attachments → fileRefs. The exact shape of the file objects is not verified yet (⏳),
+ * so this is tolerant: FileId/Id as id, FileName/Name/Title as name.
  */
 export function assignmentFiles(ctx: AppContext, elementId: number, a: ApiAssignment): FileRefDto[] {
   const raw = [...(Array.isArray(a.Files) ? a.Files : []), ...(a.TemplateFile ? [a.TemplateFile] : [])];
@@ -116,14 +131,15 @@ export function assignmentFiles(ctx: AppContext, elementId: number, a: ApiAssign
     const o = f as Record<string, unknown>;
     const fileId = typeof o.FileId === "number" ? o.FileId : typeof o.Id === "number" ? o.Id : undefined;
     if (fileId === undefined) return;
-    const name = [o.FileName, o.Name, o.Title].find((v): v is string => typeof v === "string" && v.trim() !== "") ?? `Anhang ${i + 1}`;
+    const name =
+      [o.FileName, o.Name, o.Title].find((v): v is string => typeof v === "string" && v.trim() !== "") ?? `${ctx.redactor.labels.attachment} ${i + 1}`;
     out.push({ fileRef: formatRef({ kind: "assignment", elementId, fileId }), name: redactFileName(ctx, name), kind: "file" });
   });
   return out;
 }
 
 export const getTaskInput = {
-  elementId: z.number().int().positive().describe("elementId aus itslearning_list_tasks"),
+  elementId: z.number().int().positive().describe("elementId from itslearning_list_tasks"),
 };
 
 export async function getTask(ctx: AppContext, args: { elementId: number }) {
@@ -134,10 +150,10 @@ export async function getTask(ctx: AppContext, args: { elementId: number }) {
   try {
     a = await ctx.it.assignment(args.elementId);
   } catch (e) {
-    // CustomActivity u. ä.: Details nicht über die API lesbar → Basisdaten aus der Aufgabenliste
+    // CustomActivity and similar: details not readable via the API → base data from the task list
     if (!(e instanceof ToolError && (e.code === "FORBIDDEN" || e.code === "NOT_FOUND") && base)) throw e;
   }
-  if (!a && !base) throw new ToolError("NOT_FOUND", "Aufgabe nicht gefunden.");
+  if (!a && !base) throw new ToolError("NOT_FOUND", "Task not found.");
 
   const baseDto = base ? toTaskDto(ctx, base) : undefined;
   const files = a ? assignmentFiles(ctx, args.elementId, a) : [];
@@ -174,31 +190,31 @@ export function registerTaskTools(server: McpServer, ctx: AppContext) {
   server.registerTool(
     "itslearning_list_tasks",
     {
-      title: "Aufgaben auflisten",
+      title: "List tasks",
       description:
-        "Listet Aufgaben/Hausaufgaben, sortiert nach Frist (früheste zuerst). Standard: nur offene Aufgaben inkl. überfälliger. Personennamen in Texten sind geschwärzt.",
+        "Lists tasks/homework sorted by deadline (earliest first). Default: only open tasks, including overdue ones. Person names in texts are redacted.",
       inputSchema: listTasksInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     handler(ctx, "itslearning_list_tasks", async (args: ListTasksArgs) => {
       const data = await listTasks(ctx, args);
       const overdue = data.tasks.filter((t) => t.overdue).length;
-      return ok(`${data.total} Aufgaben${overdue ? ` (davon ${overdue} überfällig auf dieser Seite)` : ""}.`, data);
+      return ok(`${data.total} tasks${overdue ? ` (${overdue} overdue on this page)` : ""}.`, data);
     }),
   );
 
   server.registerTool(
     "itslearning_get_task",
     {
-      title: "Aufgabe im Detail",
+      title: "Task details",
       description:
-        "Details einer Aufgabe: Aufgabenstellung (geschwärzt, als Text), Frist, Abgabe-Art, ob schon abgegeben, Anhänge (fileRef → itslearning_download_file). Bei manchen Aufgabentypen sind keine Details verfügbar (detailsUnavailable).",
+        "Details of a task: instructions (redacted, as text), deadline, submission type, whether it was submitted, attachments (fileRef → itslearning_download_file). Some task types have no details (detailsUnavailable).",
       inputSchema: getTaskInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     handler(ctx, "itslearning_get_task", async (args: { elementId: number }) => {
       const data = await getTask(ctx, args);
-      return ok(`Aufgabe „${data.title}“${data.deadline ? `, fällig ${data.deadline}` : ""}.`, data);
+      return ok(`Task "${data.title}"${data.deadline ? `, due ${data.deadline}` : ""}.`, data);
     }),
   );
 }

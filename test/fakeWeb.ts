@@ -1,14 +1,14 @@
 /**
- * Fake der itslearning-Web-Oberfläche für den Datei-Download-Flow – bildet die in
- * docs/itslearning-api.md verifizierte Kette nach:
- *   SSO-URL → ProcessLogin (Cookie) → ViewLearningToolElement (iframe) → platform LoginSSO
- *   → resource File/View (DownloadRedirect-Link) → filerepository (Token) → filecache → Datei
- * Alle Namen erfunden.
+ * Fake of the itslearning web interface for the file download flow – reproduces the chain
+ * verified in docs/itslearning-api.md:
+ *   SSO URL → ProcessLogin (cookie) → ViewLearningToolElement (iframe) → platform LoginSSO
+ *   → resource File/View (DownloadRedirect link) → filerepository (token) → filecache → file
+ * All names are fictional.
  */
 
 export const SECRET_MARKERS = ["SIG-SECRET", "FILETOKEN", "ATTSECRET", "IMGSECRET", "ASGSECRET", "sign=S3CR3T", "FirstName=Jonas"];
 
-/** Minimales, gültiges PDF mit einer Textzeile (Offsets werden berechnet). */
+/** Minimal valid PDF with one line of text (offsets are computed). */
 export function makePdf(text: string): Uint8Array {
   const esc = text.replace(/[\\()]/g, (c) => `\\${c}`);
   const stream = `BT /F1 12 Tf 72 720 Td (${esc}) Tj ET`;
@@ -50,7 +50,7 @@ export function createFakeWeb(): FakeWeb {
     const cookie = new Headers(init?.headers).get("cookie") ?? "";
     stats.requests.push(`${url.host}${url.pathname}`);
 
-    // --- Haupt-Instanz ---
+    // --- main instance ---
     if (url.host === "demo.itslearning.com") {
       if (url.pathname === "/SSO/MobileAppLoginSso.aspx") {
         return redirect(`/ProcessLogin.aspx?Hash=SIG-SECRET&ReturnUrl=${encodeURIComponent(url.searchParams.get("ReturnUrl") ?? "/")}`);
@@ -62,46 +62,46 @@ export function createFakeWeb(): FakeWeb {
         if (!cookie.includes("ASP.NET_SessionId=sess1") || expireNext) {
           expireNext = false;
           stats.loginPagesServed++;
-          return html('<li id="ctl00_ContentPlaceHolder1_nativeLogin">Anmelden</li>');
+          return html('<li id="ctl00_ContentPlaceHolder1_nativeLogin">Log in</li>');
         }
         const id = url.searchParams.get("LearningToolElementId");
-        if (id === "7202") return html("<h1>Notiz</h1><p>Hallo Mia Sonnenfeld, siehe https://demo.itslearning.com/x?Token=FILETOKEN</p>");
+        if (id === "7202") return html("<h1>Note</h1><p>Hello Mia Sonnenfeld, see https://demo.itslearning.com/x?Token=FILETOKEN</p>");
         return html(`<iframe src="https://platform.itslearning.com/LoginSSO.aspx?FirstName=Jonas&amp;ElementId=${id}&amp;Signature=SIG-SECRET"></iframe>`);
       }
     }
-    // --- Plattform / Ressourcen-Server ---
+    // --- platform / resource server ---
     if (url.host === "platform.itslearning.com" && url.pathname === "/LoginSSO.aspx") {
       return redirect(`https://resource.itslearning.com/File/View.aspx?ElementId=${url.searchParams.get("ElementId")}`, { "set-cookie": "res=1; path=/" });
     }
     if (url.host === "resource.itslearning.com") {
       if (url.pathname === "/File/View.aspx") {
         return html(
-          '<img src="/App_Themes/Default/images/file.gif"><a href="/Proxy/DownloadRedirect.ashx?LearningObjectId=1&amp;LearningObjectInstanceId=2">Herunterladen</a>',
+          '<img src="/App_Themes/Default/images/file.gif"><a href="/Proxy/DownloadRedirect.ashx?LearningObjectId=1&amp;LearningObjectInstanceId=2">Download</a>',
         );
       }
       if (url.pathname === "/Proxy/DownloadRedirect.ashx") return redirect("https://filerepository.itslearning.com/f1?Token=FILETOKEN&Download=1");
     }
-    // --- Datei-Ablage ---
+    // --- file storage ---
     if (url.host === "filerepository.itslearning.com") {
       const token = url.searchParams.get("Token");
       if (url.pathname === "/f1" && token === "FILETOKEN") return redirect("https://filecache.itslearning.com/c/f1?sign=S3CR3T");
       if (url.pathname === "/def" && token === "ATTSECRET") return redirect("https://filecache.itslearning.com/c/def?sign=S3CR3T");
       if (url.pathname === "/abc" && token === "IMGSECRET") return file(PNG, "image/png", "inline");
       if (url.pathname === "/asg1" && token === "ASGSECRET") {
-        return file("Aufgabe von Sabine Lindqvist für Jonas Beispielmann", "application/octet-stream", "attachment; filename*=UTF-8''Br%C3%BCche_Jonas.txt");
+        return file("Task from Sabine Lindqvist for Jonas Beispielmann", "application/octet-stream", "attachment; filename*=UTF-8''Caf%C3%A9_Jonas.txt");
       }
       return new Response("nope", { status: 403 });
     }
     if (url.host === "filecache.itslearning.com") {
       if (url.pathname === "/c/f1") {
         return file(
-          "Arbeitsblatt für Jonas Beispielmann\nFragen an lindqvist@schule.example\nAufgabe 1: 3/4 + 1/8",
+          "Worksheet for Jonas Beispielmann\nQuestions to lindqvist@school.example\nTask 1: 3/4 + 1/8",
           "text/plain; charset=utf-8",
-          'attachment; filename="Arbeitsblatt_Jonas_Beispielmann.txt"',
+          'attachment; filename="Worksheet_Jonas_Beispielmann.txt"',
         );
       }
       if (url.pathname === "/c/def") {
-        return file(makePdf("Notizen von Jonas Beispielmann und Mia Sonnenfeld"), "application/pdf", 'attachment; filename="Notizen_Jonas_Beispielmann.pdf"');
+        return file(makePdf("Notes by Jonas Beispielmann and Mia Sonnenfeld"), "application/pdf", 'attachment; filename="Notes_Jonas_Beispielmann.pdf"');
       }
     }
     return new Response("not found", { status: 404 });

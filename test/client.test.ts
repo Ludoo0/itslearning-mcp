@@ -23,7 +23,7 @@ function server(responses: (() => Response)[]) {
   const fetchImpl = (async (url: URL | string, init?: RequestInit) => {
     seen.push({ url: String(url), auth: new Headers(init?.headers).get("authorization") });
     const next = responses.shift();
-    if (!next) throw new Error("keine Antwort mehr");
+    if (!next) throw new Error("no more responses");
     return next();
   }) as unknown as typeof fetch;
   return { seen, fetchImpl };
@@ -33,7 +33,7 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
   new Response(JSON.stringify(body), { status, headers });
 
 describe("ApiClient", () => {
-  test("setzt Pfad-Parameter, Query und Bearer", async () => {
+  test("sets path parameters, query and bearer", async () => {
     const { seen, fetchImpl } = server([json({ ok: 1 })]);
     const api = new ApiClient(cfg, fakeAuth(), fetchImpl, noSleep);
     await api.get("/restapi/personal/courses/{courseId}/tasks/v1", { courseId: 42 }, { PageSize: 10, skip: undefined });
@@ -41,7 +41,7 @@ describe("ApiClient", () => {
     expect(seen[0]!.auth).toBe("Bearer T0");
   });
 
-  test("401 → Token verwerfen und einmal wiederholen", async () => {
+  test("401 → discard token and retry once", async () => {
     const auth = fakeAuth();
     const { seen, fetchImpl } = server([json({}, 401), json({ ok: 1 })]);
     const res = await new ApiClient(cfg, auth, fetchImpl, noSleep).get<{ ok: number }>("/x");
@@ -50,7 +50,7 @@ describe("ApiClient", () => {
     expect(seen.map((s) => s.auth)).toEqual(["Bearer T0", "Bearer T1"]);
   });
 
-  test("5xx/429 → Retry mit Backoff, danach Erfolg", async () => {
+  test("5xx/429 → retry with backoff, then success", async () => {
     const sleeps: number[] = [];
     const { fetchImpl } = server([json({}, 503), json({}, 429, { "retry-after": "2" }), json({ ok: 1 })]);
     const api = new ApiClient(cfg, fakeAuth(), fetchImpl, async (ms) => {
@@ -60,14 +60,14 @@ describe("ApiClient", () => {
     expect(sleeps).toEqual([500, 2000]);
   });
 
-  test("403/404 → ToolError ohne Rohtext der API", async () => {
+  test("403/404 → ToolError without raw API text", async () => {
     const { fetchImpl } = server([json({ Message: "PersonId=4711 does not have Read permission" }, 403)]);
     const err = (await new ApiClient(cfg, fakeAuth(), fetchImpl, noSleep).get("/x").catch((e) => e)) as ToolError;
     expect(err.code).toBe("FORBIDDEN");
     expect(err.message).not.toContain("4711");
   });
 
-  test("Cache: gleicher Request innerhalb der TTL nur einmal", async () => {
+  test("cache: same request within TTL only once", async () => {
     const { seen, fetchImpl } = server([json({ n: 1 })]);
     const api = new ApiClient(cfg, fakeAuth(), fetchImpl, noSleep);
     const [a, b] = await Promise.all([api.get<{ n: number }>("/x"), api.get<{ n: number }>("/x")]);
@@ -76,7 +76,7 @@ describe("ApiClient", () => {
     expect(seen).toHaveLength(1);
   });
 
-  test("Fehler werden nicht gecacht", async () => {
+  test("errors are not cached", async () => {
     const { seen, fetchImpl } = server([json({}, 404), json({ n: 2 })]);
     const api = new ApiClient(cfg, fakeAuth(), fetchImpl, noSleep);
     await api.get("/x").catch(() => {});

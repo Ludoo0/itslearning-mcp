@@ -11,13 +11,13 @@ export type ErrorCode =
   | "NOT_A_FILE"
   | "INTERNAL";
 
-/** Fehler mit einer Meldung, die gefahrlos an den Agenten gehen darf (keine IDs, keine Rohtexte der API). */
+/** Error with a message that may safely be shown to the agent (no ids, no raw API texts). */
 export class ToolError extends Error {
   constructor(
     public code: ErrorCode,
     message: string,
     public status?: number,
-    /** true = nicht automatisch wiederholen (z. B. falsches Passwort → Konto-Sperre vermeiden). */
+    /** true = do not retry automatically (e.g. wrong password → avoid account lockout). */
     public fatal = false,
   ) {
     super(message);
@@ -27,5 +27,5 @@ export class ToolError extends Error {
 
 export function toToolError(e: unknown): ToolError {
   if (e instanceof ToolError) return e;
-  return new ToolError("INTERNAL", "Interner Fehler im itslearning-MCP-Server.");
+  return new ToolError("INTERNAL", "Internal error in the itslearning MCP server.");
 }

@@ -1,6 +1,6 @@
 /**
- * Datei-Cache auf der Platte (Spec 7): DATA_DIR/files/<sha256(ref)>.{bin,json}
- * TTL + Größenlimit (älteste Einträge fliegen zuerst). Fehler beim Cachen sind nie fatal.
+ * On-disk file cache (spec 7): DATA_DIR/files/<sha256(ref)>.{bin,json}
+ * TTL + size limit (oldest entries are evicted first). Caching errors are never fatal.
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -41,11 +41,11 @@ export class FileCache {
       writeFileSync(join(this.dir, `${k}.json`), JSON.stringify({ ...meta, fetchedAt: this.now() }), { mode: 0o600 });
       this.prune();
     } catch (e) {
-      log.warn("Datei-Cache nicht beschreibbar", { error: e instanceof Error ? e.message : String(e) });
+      log.warn("File cache not writable", { error: e instanceof Error ? e.message : String(e) });
     }
   }
 
-  /** Hält den Cache unter maxBytes (älteste zuerst löschen). */
+  /** Keeps the cache below maxBytes (deletes the oldest first). */
   private prune() {
     const entries = readdirSync(this.dir)
       .filter((f) => f.endsWith(".bin"))

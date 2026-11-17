@@ -5,8 +5,8 @@ import { log } from "../log";
 import { handler, ok } from "./result";
 
 export const listCoursesInput = {
-  includeInactive: z.boolean().default(false).describe("Auch ehemalige/inaktive Kurse anzeigen"),
-  starredOnly: z.boolean().default(false).describe("Nur als Favorit markierte Kurse"),
+  includeInactive: z.boolean().default(false).describe("Also include former/inactive courses"),
+  starredOnly: z.boolean().default(false).describe("Only courses marked as favorite"),
 };
 type ListCoursesArgs = { includeInactive?: boolean; starredOnly?: boolean };
 
@@ -27,7 +27,7 @@ export async function listCourses(ctx: AppContext, args: ListCoursesArgs) {
     ctx.it.courses(includeInactive),
     includeInactive ? ctx.it.courses(false) : Promise.resolve(undefined),
     ctx.it.starredCourseIds().catch(() => {
-      log.warn("Favoriten konnten nicht geladen werden");
+      log.warn("Could not load favorite courses");
       return new Set<number>();
     }),
   ]);
@@ -44,7 +44,7 @@ export async function listCourses(ctx: AppContext, args: ListCoursesArgs) {
     active: activeIds.has(c.CourseId),
   }));
   if (args.starredOnly) dtos = dtos.filter((c) => c.starred);
-  dtos.sort((a, b) => Number(b.starred) - Number(a.starred) || a.title.localeCompare(b.title, "de"));
+  dtos.sort((a, b) => Number(b.starred) - Number(a.starred) || a.title.localeCompare(b.title));
 
   return { courses: dtos, total: dtos.length };
 }
@@ -53,16 +53,16 @@ export function registerCourseTools(server: McpServer, ctx: AppContext) {
   server.registerTool(
     "itslearning_list_courses",
     {
-      title: "Kurse auflisten",
+      title: "List courses",
       description:
-        "Listet die itslearning-Kurse des Kontos (Standard: aktuelle Kurse). Liefert courseId für andere Tools sowie Zähler für neue Benachrichtigungen/Bulletins.",
+        "Lists the account's itslearning courses (default: current courses). Returns courseId for other tools and counters for new notifications/bulletins.",
       inputSchema: listCoursesInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     handler(ctx, "itslearning_list_courses", async (args: ListCoursesArgs) => {
       const data = await listCourses(ctx, args);
       const fresh = data.courses.filter((c) => c.newNotifications + c.newBulletins > 0).length;
-      return ok(`${data.total} Kurse${fresh ? `, ${fresh} mit Neuigkeiten` : ""}.`, data);
+      return ok(`${data.total} courses${fresh ? `, ${fresh} with news` : ""}.`, data);
     }),
   );
 }

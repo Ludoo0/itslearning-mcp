@@ -1,7 +1,7 @@
 /**
- * Strukturiertes Logging nach stderr (stdout gehört bei stdio-Transport dem MCP-Protokoll).
- * Bekannte Geheimnisse werden vor der Ausgabe ersetzt; URLs werden zu Mustern reduziert.
- * Inhalte (Texte, Namen) werden grundsätzlich nicht geloggt.
+ * Structured logging to stderr (with stdio transport, stdout belongs to the MCP protocol).
+ * Known secrets are replaced before output; URLs are reduced to patterns.
+ * Content (texts, names) is never logged.
  */
 import { redactUrlForLog } from "./redaction/secrets";
 
@@ -15,7 +15,7 @@ export function setLogLevel(level: LogLevel) {
   minLevel = LEVELS[level];
 }
 
-/** Registriert einen Wert, der nie im Log erscheinen darf (Passwort, Tokens, API-Key). */
+/** Registers a value that must never appear in the log (password, tokens, API key). */
 export function registerSecret(value: string | undefined) {
   if (value && value.length >= 6) secrets.add(value);
 }

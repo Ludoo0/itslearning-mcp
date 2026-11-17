@@ -1,7 +1,7 @@
 /**
- * Typen der itslearning-API – nur die Felder, die der Server nutzt.
- * Struktur verifiziert in docs/itslearning-api.md. Alles ist optional/nullable modelliert,
- * weil die API Felder je nach Element weglässt.
+ * Types of the itslearning API – only the fields the server uses.
+ * Structure verified in docs/itslearning-api.md. Everything is modeled optional/nullable
+ * because the API omits fields depending on the element.
  */
 
 export type Paged<T> = {
@@ -34,7 +34,7 @@ export type ApiCourse = {
   HasAdminPermissions?: boolean;
 };
 
-/** Element aus /courses/cards/starred/v1 – Feldnamen wie bei Kursen (CourseId). */
+/** Element from /courses/cards/starred/v1 – field names as for courses (CourseId). */
 export type ApiCourseCard = { CourseId?: number; Id?: number };
 
 export type ApiTask = {
@@ -83,7 +83,7 @@ export type ApiLightBulletin = {
   PublishedBy?: ApiPublishedBy | null;
 };
 
-/** Eintrag aus notifications/stream/v2 bzw. courses/{id}/stream/v1. */
+/** Entry from notifications/stream/v2 or courses/{id}/stream/v1. */
 export type ApiNotification = {
   NotificationId: number;
   Text?: string | null;
@@ -98,7 +98,7 @@ export type ApiNotification = {
   LocationId?: number | null;
 };
 
-/** Element (z. B. Ressource eines Bulletins). */
+/** Element (e.g. a resource attached to a bulletin). */
 export type ApiElement = {
   ElementId: number;
   ElementType?: string | null;
@@ -153,7 +153,7 @@ export type ApiThread = {
 export type ApiThreadList = { Threads: Paged<ApiThread>; HasMore?: boolean };
 export type ApiThreadMessages = { Messages: Paged<ApiMessage> };
 
-/** Teilnehmer:in eines Kurses (courses/{id}/participants/v1) – laut API-Doku, gegen echte Instanz ⏳. */
+/** Course participant (courses/{id}/participants/v1) – per API docs; verified against a real instance. */
 export type ApiCourseParticipant = {
   PersonId: number;
   FullName?: string | null;
@@ -161,7 +161,7 @@ export type ApiCourseParticipant = {
   RoleId?: number | null;
 };
 
-/** Kurs-Ressource (courses/{id}/resources/v1, folders/{id}/resources/v1, courses/resources/{id}/v1). */
+/** Course resource (courses/{id}/resources/v1, folders/{id}/resources/v1, courses/resources/{id}/v1). */
 export type ApiResource = {
   ElementId: number;
   Title?: string | null;

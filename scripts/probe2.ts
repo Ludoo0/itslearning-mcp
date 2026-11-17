@@ -1,16 +1,16 @@
 /**
- * itslearning API probe – Runde 2
+ * itslearning API probe – round 2
  *
- * Testet gezielt: Token-Refresh, Kalender, Kurs-Inhalte (News, Stream, Ressourcen),
- * Aufgaben-Details inkl. Anhänge, Nachrichten-Threads und den Datei-Download
- * (über SSO-URL → Web-Session → Download-Link).
+ * Tests specifically: token refresh, calendar, course content (news, stream, resources),
+ * task details incl. attachments, message threads and file downloads
+ * (via SSO URL → web session → download link).
  *
- * Ergebnis: probe-output/report2.json – REDACTED, d. h. nur Struktur:
- *   Feldnamen + Typen, Anzahl, HTTP-Status, URL-Muster (IDs/Tokens/Dateinamen ersetzt)
- *   und Werte einiger Enum-Felder (ElementType, Status …). Keine Namen, keine Texte.
+ * Result: probe-output/report2.json – REDACTED, i.e. structure only:
+ *   field names + types, counts, HTTP status, URL patterns (ids/tokens/file names replaced)
+ *   and values of some enum fields (ElementType, Status …). No names, no texts.
  *
- * Ausführen:   bun run probe2           (nur redacted Report)
- *              bun run probe2 --save    (zusätzlich Rohdaten nach probe-output/raw2/ – privat!)
+ * Run:   bun run probe2           (redacted report only)
+ *        bun run probe2 --save    (additionally raw data to probe-output/raw2/ – private!)
  */
 
 import { BASE, UA, ItslearningClient, loginWithPassword, refreshToken, promptCredentials } from "./lib";
@@ -28,17 +28,17 @@ type Json = any;
 // Redaction
 // =====================================================================
 
-/** Felder, deren Werte unkritische Kategorien sind und im Report bleiben dürfen. */
+/** Fields whose values are harmless categories and may stay in the report. */
 const ENUM_FIELDS = new Set([
   "ElementType", "Status", "Type", "LearningToolType", "CourseFocus", "ContextRole",
   "NotificationType", "ContentType", "TaskStatus", "AssessmentType", "FeatureType",
   "EventType", "ThreadType", "MessageType", "FileType", "SubmissionStatus",
 ]);
 
-/** Feldnamen, die direkt auf Personen verweisen. */
+/** Field names that refer directly to people. */
 const PERSON_RE =
   /(FirstName|LastName|FullName|DisplayName|^Name$|PersonId|PersonName|Person$|ProfileImage|ProfileUrl|PictureUrl|Avatar|PublishedBy|CreatedBy|ChangedBy|UpdatedBy|Author|Email|Mail|Participant|Sender|Recipient|Phone|Member|Student|Teacher|Owner|User)/i;
-/** Feldnamen mit Freitext, in dem Namen u. ä. stehen können. */
+/** Field names with free text that may contain names etc. */
 const FREETEXT_RE = /(Text|Body|Message|Comment|Description|Content$|Html|Lexical|Summary|Title|Subject)/i;
 
 type Ctx = { enums: Map<string, Set<string>>; urls: Map<string, Set<string>> };
@@ -66,13 +66,13 @@ function redactSegment(seg: string): string {
   if (/^[\w-]+\.(aspx|ashx|asmx|html?|php)$/i.test(s)) return s; // Seitennamen behalten
   const ext = s.match(/\.([a-z0-9]{1,5})$/i);
   if (ext) return `{file}.${ext[1]!.toLowerCase()}`;
-  // Lange, ungewöhnliche oder gemischt alphanumerische Segmente (Short-Links, Tokens) entfernen
+  // Remove long, unusual or mixed alphanumeric segments (short links, tokens)
   if (s.length > 24 || /[^\w.-]/.test(s) || (/\d/.test(s) && /[a-z]/i.test(s))) return "{token}";
   return s;
 }
 
-/** Ersetzt IDs, Tokens, Dateinamen und alle Query-Werte. Host + Pfadstruktur bleiben.
- *  Externe (nicht-itslearning) URLs werden komplett ersetzt – sie stammen meist aus Inhalten. */
+/** Replaces ids, tokens, file names and all query values. Host + path structure remain.
+ *  External (non-itslearning) URLs are replaced entirely – they usually come from content. */
 function redactUrl(raw: string, base = BASE): string {
   let u: URL;
   try {
@@ -106,7 +106,7 @@ function mergeSchemas(a: Json, b: Json): Json {
   return a;
 }
 
-/** Wandelt beliebiges JSON in ein Schema (nur Typen) um und sammelt Enums + URL-Muster. */
+/** Converts arbitrary JSON into a schema (types only) and collects enums + URL patterns. */
 function schemaOf(v: unknown, ctx: Ctx, key = "", depth = 0): Json {
   if (v === null || v === undefined) return "null";
   if (Array.isArray(v)) {
@@ -124,7 +124,7 @@ function schemaOf(v: unknown, ctx: Ctx, key = "", depth = 0): Json {
   if (typeof v === "string") {
     if (ENUM_FIELDS.has(key) && v.length <= 40 && !v.includes("@")) addTo(ctx.enums, key, v);
     if (/^(https?:|webcal:)?\/\//i.test(v) || /^\/[\w-]+\//.test(v)) {
-      // URL-Muster nur aus echten URL-Feldern sammeln, nie aus Freitext (z. B. Nachrichtentext)
+      // Collect URL patterns only from real URL fields, never from free text (e.g. message text)
       if (!FREETEXT_RE.test(key) || /Url$/i.test(key)) addTo(ctx.urls, key, redactUrl(v), 8);
       return "url";
     }
@@ -139,7 +139,7 @@ function schemaOf(v: unknown, ctx: Ctx, key = "", depth = 0): Json {
   return typeof v;
 }
 
-/** Listet alle Pfade im Schema, deren Feldname personenbezogen bzw. Freitext ist. */
+/** Lists all schema paths whose field name is person-related or free text. */
 function sensitivePaths(schema: Json, prefix = ""): { person: string[]; freetext: string[] } {
   const res = { person: [] as string[], freetext: [] as string[] };
   const walk = (s: Json, p: string): void => {
@@ -163,17 +163,17 @@ const toRecord = (m: Map<string, Set<string>>) =>
   m.size ? Object.fromEntries([...m].map(([k, s]) => [k, [...s]])) : undefined;
 
 function sanitizeError(text: string): string {
-  if (/<html|<!DOCTYPE/i.test(text)) return "HTML-Fehlerseite";
+  if (/<html|<!DOCTYPE/i.test(text)) return "HTML error page";
   return text
     .replace(/(https?|webcal):\/\/[^\s'"]+/gi, (u) => redactUrl(u))
-    .replace(/\d+/g, "{n}") // IDs (PersonId, CourseId …) aus Fehlermeldungen entfernen
+    .replace(/\d+/g, "{n}") // remove ids (PersonId, CourseId …) from error messages
     .replace(/\s+/g, " ")
     .slice(0, 160);
 }
 
 const uniq = <T,>(a: T[]) => [...new Set(a)];
 const slug = (s: string) => s.replace(/[^\w-]+/g, "_").replace(/_+/g, "_").slice(0, 60);
-/** Liste aus Antwort holen: Array, {EntityArray} oder eine Ebene verschachtelt ({Resources:{EntityArray}}). */
+/** Gets the list from a response: array, {EntityArray} or nested one level ({Resources:{EntityArray}}). */
 const entities = (j: Json): Json[] => {
   if (Array.isArray(j)) return j;
   if (Array.isArray(j?.EntityArray)) return j.EntityArray;
@@ -182,17 +182,17 @@ const entities = (j: Json): Json[] => {
 };
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
-/** Ersetzt {platzhalter} im Template durch URL-encodete Werte. */
+/** Replaces {placeholders} in the template with URL-encoded values. */
 function fill(template: string, params: Record<string, string | number> = {}): string {
   return template.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(String(params[k] ?? "")));
 }
 
-/** Sucht rekursiv ein Feld (erste Übereinstimmung) */
+/** Finds a field (first match) */
 function findKey(obj: Json, re: RegExp): string | undefined {
   return isPlainObject(obj) ? Object.keys(obj).find((k) => re.test(k)) : undefined;
 }
 
-/** Sammelt rekursiv alle Objekte, die ein Feld passend zu `re` haben. */
+/** Recursively collects all objects that have a field matching `re`. */
 function collectObjectsWithKey(v: Json, re: RegExp, out: Json[] = [], depth = 0): Json[] {
   if (depth > 8 || v === null || typeof v !== "object") return out;
   if (Array.isArray(v)) v.forEach((x) => collectObjectsWithKey(x, re, out, depth + 1));
@@ -227,14 +227,14 @@ const findings: string[] = [];
 
 function logStep(r: StepResult) {
   const ok = typeof r.status === "number" && r.status >= 200 && r.status < 300;
-  const n = r.count !== undefined ? ` · ${r.count}${r.total !== undefined ? `/${r.total}` : ""} Einträge` : "";
+  const n = r.count !== undefined ? ` · ${r.count}${r.total !== undefined ? `/${r.total}` : ""} entries` : "";
   console.log(`${ok ? "✅" : "❌"} ${String(r.status).padEnd(4)} ${r.step}${n}`);
   console.log(`         ${r.endpoint}${r.error ? `\n         → ${r.error}` : ""}`);
 }
 
 let client: ItslearningClient;
 
-/** GET + Schema-Analyse + optional Rohdaten speichern. Gibt JSON bei Erfolg zurück. */
+/** GET + schema analysis + optionally store raw data. Returns JSON on success. */
 async function call(step: string, template: string, params: Record<string, string | number> = {}): Promise<Json | undefined> {
   const path = fill(template, params);
   const t0 = performance.now();
@@ -248,7 +248,7 @@ async function call(step: string, template: string, params: Record<string, strin
     try {
       json = JSON.parse(text);
     } catch {
-      /* kein JSON */
+      /* not JSON */
     }
     if (res.ok && json !== undefined) {
       const ctx = newCtx();
@@ -265,7 +265,7 @@ async function call(step: string, template: string, params: Record<string, strin
     } else if (!res.ok) {
       r.error = sanitizeError(text);
     } else {
-      r.error = `Kein JSON (${res.headers.get("content-type")}, ${text.length} Bytes)`;
+      r.error = `not JSON (${res.headers.get("content-type")}, ${text.length} bytes)`;
     }
   } catch (e) {
     r.status = "network-error";
@@ -278,7 +278,7 @@ async function call(step: string, template: string, params: Record<string, strin
 }
 
 // =====================================================================
-// Web-Session (für Datei-Downloads über SSO-URL)
+// Web session (for file downloads via SSO URL)
 // =====================================================================
 
 class CookieJar {
@@ -297,7 +297,7 @@ class CookieJar {
 
 const isItslHost = (url: string) => /(^|\.)itslearning\.com$/i.test(new URL(url).hostname);
 
-/** Folgt Redirects manuell und hält Cookies (nur für *.itslearning.com). */
+/** Follows redirects manually and keeps cookies (only for *.itslearning.com). */
 async function browse(url: string, jar: CookieJar, maxHops = 12) {
   const hops: { status: number; url: string }[] = [];
   let current = url;
@@ -354,7 +354,7 @@ function describeFile(res: Response, bytes: number) {
   };
 }
 
-/** Lädt eine (vermutlich tokenisierte) Datei-URL direkt; bei Fehler zweiter Versuch mit Bearer-Token. */
+/** Loads a (presumably tokenized) file URL directly; on error a second attempt with bearer token. */
 async function probeDirectFile(step: string, url: string) {
   const r: StepResult = { step, endpoint: redactUrl(url), status: "?" };
   try {
@@ -381,22 +381,22 @@ async function probeDirectFile(step: string, url: string) {
   steps.push(r);
   logStep(r);
   const dl = r.download as any;
-  if (dl) console.log(`         → Datei: ${dl.contentType} · ${dl.bytes} Bytes · .${dl.fileExtension ?? "?"}`);
+  if (dl) console.log(`         → file: ${dl.contentType} · ${dl.bytes} bytes · .${dl.fileExtension ?? "?"}`);
   await Bun.sleep(DELAY_MS);
 }
 
-/** Versucht, eine Kurs-Ressource über SSO-URL + Web-Session herunterzuladen. */
+/** Tries to download a course resource via SSO URL + web session. */
 async function probeResourceDownload(resource: Json, idx: number) {
   const elementType = String(resource.ElementType ?? "?");
-  const detail = await call(`Ressource-Detail #${idx} (${elementType})`, "/restapi/personal/courses/resources/{resourceId}/v1", {
+  const detail = await call(`Resource detail #${idx} (${elementType})`, "/restapi/personal/courses/resources/{resourceId}/v1", {
     resourceId: resource.ElementId,
   });
   const target: string | undefined = detail?.ContentUrl || detail?.Url || resource.ContentUrl || resource.Url;
   if (!target) return;
-  const sso = await call(`SSO-URL #${idx}`, "/restapi/personal/sso/url/v1?url={url}", { url: target });
+  const sso = await call(`SSO URL #${idx}`, "/restapi/personal/sso/url/v1?url={url}", { url: target });
   if (!sso?.Url) return;
 
-  const rec: StepResult = { step: `Download-Flow #${idx} (${elementType})`, endpoint: "SSO-URL → Web-Session", status: "?" };
+  const rec: StepResult = { step: `Download flow #${idx} (${elementType})`, endpoint: "SSO URL → web session", status: "?" };
   try {
     const jar = new CookieJar();
     const page = await browse(sso.Url, jar);
@@ -415,7 +415,7 @@ async function probeResourceDownload(resource: Json, idx: number) {
       rec.iframePatterns = uniq(links.iframes.map((u) => redactUrl(u))).slice(0, 5);
       candidate = links.downloads[0];
 
-      // Viele Element-Seiten betten den Inhalt per iframe ein → eine Ebene tiefer schauen
+      // Many element pages embed the content in an iframe → look one level deeper
       if (!candidate && links.iframes[0]) {
         const inner = await browse(links.iframes[0], jar);
         const innerCt = inner.res.headers.get("content-type") ?? "";
@@ -454,7 +454,7 @@ async function probeResourceDownload(resource: Json, idx: number) {
   steps.push(rec);
   logStep(rec);
   const dl = rec.download as any;
-  if (dl) console.log(`         → Datei: ${dl.contentType} · ${dl.bytes} Bytes · .${dl.fileExtension ?? "?"}`);
+  if (dl) console.log(`         → file: ${dl.contentType} · ${dl.bytes} bytes · .${dl.fileExtension ?? "?"}`);
   await Bun.sleep(DELAY_MS);
 }
 
@@ -464,7 +464,7 @@ async function probeResourceDownload(resource: Json, idx: number) {
 
 async function main() {
   const { username, password } = await promptCredentials();
-  console.log(`\nitslearning API probe – Runde 2 → ${BASE}`);
+  console.log(`\nitslearning API probe – round 2 → ${BASE}`);
 
   // --- 1. Auth + Refresh ---
   process.stdout.write("\nLogin … ");
@@ -479,23 +479,23 @@ async function main() {
       auth.refreshRotatesRefreshToken = refreshed.refresh_token !== first.refresh_token;
       auth.refreshedExpiresIn = refreshed.expires_in;
       token = refreshed;
-      console.log(`Refresh … OK (rotiert: ${auth.refreshRotatesRefreshToken ? "ja" : "nein"})\n`);
+      console.log(`Refresh … OK (rotates: ${auth.refreshRotatesRefreshToken ? "yes" : "no"})\n`);
     } catch (e) {
       auth.refreshWorks = false;
       auth.refreshError = e instanceof Error ? e.message : String(e);
-      console.log(`Refresh … FEHLER: ${auth.refreshError}\n`);
+      console.log(`Refresh … ERROR: ${auth.refreshError}\n`);
     }
   }
   client = new ItslearningClient(token);
 
-  // --- 2. Person + Kalender ---
-  console.log("── Person & Kalender");
+  // --- 2. Person + calendar ---
+  console.log("── Person & calendar");
   const person = await call("Person", "/restapi/personal/person/v1");
   const from = new Date(Date.now() - 7 * 864e5);
-  await call("Kalender-Events ab -7 Tage", "/restapi/personal/calendar/events/v1?fromDate={from}&PageSize=50", { from: isoDate(from) });
+  await call("Calendar events from -7 days", "/restapi/personal/calendar/events/v1?fromDate={from}&PageSize=50", { from: isoDate(from) });
 
   if (person?.iCalUrl) {
-    const r: StepResult = { step: "iCal-Feed", endpoint: redactUrl(person.iCalUrl), status: "?" };
+    const r: StepResult = { step: "iCal feed", endpoint: redactUrl(person.iCalUrl), status: "?" };
     try {
       const res = await fetch(String(person.iCalUrl).replace(/^webcal:/i, "https:"), { headers: { "User-Agent": UA } });
       const text = await res.text();
@@ -512,20 +512,20 @@ async function main() {
     logStep(r);
   }
 
-  // --- 3. Kurse ---
-  console.log("\n── Kurse");
-  const v1 = entities(await call("Kurse v1", "/restapi/personal/courses/v1?PageSize=100"));
-  const v2 = entities(await call("Kurse v2", "/restapi/personal/courses/v2?PageSize=100"));
-  await call("Kurse v3", "/restapi/personal/courses/v3?PageSize=100");
-  await call("Kurse v4", "/restapi/personal/courses/v4?PageSize=100");
-  await call("Kurs-Karten (starred)", "/restapi/personal/courses/cards/starred/v1?PageSize=100");
+  // --- 3. Courses ---
+  console.log("\n── Courses");
+  const v1 = entities(await call("Courses v1", "/restapi/personal/courses/v1?PageSize=100"));
+  const v2 = entities(await call("Courses v2", "/restapi/personal/courses/v2?PageSize=100"));
+  await call("Courses v3", "/restapi/personal/courses/v3?PageSize=100");
+  await call("Courses v4", "/restapi/personal/courses/v4?PageSize=100");
+  await call("Course cards (starred)", "/restapi/personal/courses/cards/starred/v1?PageSize=100");
 
   const cid = (c: Json) => c?.CourseId ?? c?.Id;
   const v1Ids = new Set(v1.map(cid));
   const onlyV2 = v2.filter((c) => !v1Ids.has(cid(c)));
-  findings.push(`Kurse: v1=${v1.length}, v2=${v2.length}, nur in v2=${onlyV2.length}`);
+  findings.push(`Courses: v1=${v1.length}, v2=${v2.length}, only in v2=${onlyV2.length}`);
   if (onlyV2.length) {
-    // Welche Feldwerte unterscheiden die "nur v2"-Kurse? (nur boolesche Felder + Enums, keine Titel)
+    // Which field values distinguish the "only v2" courses? (boolean fields + enums only, no titles)
     const boolDiff: Record<string, { onlyV2True: number; v1True: number }> = {};
     for (const k of Object.keys(v2[0] ?? {})) {
       if (typeof v2[0][k] !== "boolean") continue;
@@ -534,10 +534,10 @@ async function main() {
         v1True: v2.filter((c) => v1Ids.has(cid(c)) && c[k] === true).length,
       };
     }
-    steps.push({ step: "Kurse v1 vs v2 (boolesche Felder)", endpoint: "-", status: "analysis", boolDiff });
+    steps.push({ step: "Courses v1 vs v2 (boolean fields)", endpoint: "-", status: "analysis", boolDiff });
   }
 
-  // --- 4. Kurs-Tiefenprobe ---
+  // --- 4. Course deep probe ---
   const deepCourses = [...v1]
     .sort((a, b) => String(b.LastUpdatedUtc ?? "").localeCompare(String(a.LastUpdatedUtc ?? "")))
     .slice(0, DEEP_COURSES);
@@ -547,8 +547,8 @@ async function main() {
 
   for (const [i, c] of deepCourses.entries()) {
     const courseId = cid(c);
-    const tag = `Kurs ${i + 1}`;
-    console.log(`\n── ${tag} (zuletzt aktualisiert)`);
+    const tag = `Course ${i + 1}`;
+    console.log(`\n── ${tag} (most recently updated)`);
     await call(`${tag}: Details`, "/restapi/personal/courses/{courseId}/v1", { courseId });
     await call(`${tag}: Features v2`, "/restapi/personal/courses/{courseId}/features/v2", { courseId });
     const bulletins = await call(`${tag}: Bulletins`, "/restapi/personal/courses/{courseId}/bulletins/v1?PageSize=10", { courseId });
@@ -557,17 +557,17 @@ async function main() {
       if (k && b[k]) bulletinIds.push(b[k]);
       for (const img of b.AttachedImages ?? []) if (img?.OriginalFileUrl) bulletinImageUrls.push(img.OriginalFileUrl);
     }
-    await call(`${tag}: Stream (inkl. Light Bulletins)`, "/restapi/personal/courses/{courseId}/stream/v1?showLightBulletins=true&PageSize=20", { courseId });
-    await call(`${tag}: Aufgaben`, "/restapi/personal/courses/{courseId}/tasks/v1?PageSize=20", { courseId });
-    await call(`${tag}: Kalender`, "/restapi/personal/courses/{courseId}/calendarevents/v1?PageSize=20&fromDate={from}", { courseId, from: isoDate(from) });
-    await call(`${tag}: Zuletzt geänderte Ressourcen`, "/restapi/personal/courses/{courseId}/resources/lastupdated/v1?numberOfElements=10", { courseId });
-    const root = entities(await call(`${tag}: Ressourcen (Root)`, "/restapi/personal/courses/{courseId}/resources/v1?PageSize=100", { courseId }));
+    await call(`${tag}: stream (incl. light bulletins)`, "/restapi/personal/courses/{courseId}/stream/v1?showLightBulletins=true&PageSize=20", { courseId });
+    await call(`${tag}: tasks`, "/restapi/personal/courses/{courseId}/tasks/v1?PageSize=20", { courseId });
+    await call(`${tag}: calendar`, "/restapi/personal/courses/{courseId}/calendarevents/v1?PageSize=20&fromDate={from}", { courseId, from: isoDate(from) });
+    await call(`${tag}: recently changed resources`, "/restapi/personal/courses/{courseId}/resources/lastupdated/v1?numberOfElements=10", { courseId });
+    const root = entities(await call(`${tag}: resources (root)`, "/restapi/personal/courses/{courseId}/resources/v1?PageSize=100", { courseId }));
     const isFolder = (r: Json) => /folder/i.test(String(r.ElementType));
     resourcePool.push(...root.filter((r) => !isFolder(r)));
     const folder = root.find(isFolder);
     if (folder) {
       const sub = entities(
-        await call(`${tag}: Ressourcen (Unterordner)`, "/restapi/personal/courses/{courseId}/folders/{folderId}/resources/v1?PageSize=100", {
+        await call(`${tag}: resources (subfolder)`, "/restapi/personal/courses/{courseId}/folders/{folderId}/resources/v1?PageSize=100", {
           courseId,
           folderId: folder.ElementId,
         }),
@@ -577,24 +577,24 @@ async function main() {
   }
 
   if (bulletinIds.length) {
-    console.log("\n── Bulletin-Anhänge");
-    await call("Bulletin: Elemente/Anhänge", "/restapi/personal/courses/bulletins/{bulletinId}/elements/v1", { bulletinId: bulletinIds[0]! });
+    console.log("\n── Bulletin attachments");
+    await call("Bulletin: elements/attachments", "/restapi/personal/courses/bulletins/{bulletinId}/elements/v1", { bulletinId: bulletinIds[0]! });
   }
 
-  // --- 5. Aufgaben global + Details ---
-  console.log("\n── Aufgaben");
-  const tasks = entities(await call("Aufgaben (alle)", "/restapi/personal/tasks/v1?PageSize=100"));
-  await call("Aufgaben-Tagesübersicht", "/restapi/personal/tasklistdailyworkflow/v1?PageSize=50");
+  // --- 5. Tasks (global) + details ---
+  console.log("\n── Tasks");
+  const tasks = entities(await call("Tasks (all)", "/restapi/personal/tasks/v1?PageSize=100"));
+  await call("Task daily overview", "/restapi/personal/tasklistdailyworkflow/v1?PageSize=50");
   let assignmentFileTested = false;
   for (const [i, t] of tasks.slice(0, 3).entries()) {
     const elementId = t.ElementId ?? t.TaskId;
     if (!elementId) continue;
-    const a = await call(`Assignment-Detail #${i + 1} (${t.ElementType ?? "?"})`, "/restapi/personal/assignments/{elementId}/v1", { elementId });
+    const a = await call(`Assignment detail #${i + 1} (${t.ElementType ?? "?"})`, "/restapi/personal/assignments/{elementId}/v1", { elementId });
     if (!a || assignmentFileTested) continue;
     const fileObj = collectObjectsWithKey(a, /^FileId$/i)[0];
     if (!fileObj) continue;
     assignmentFileTested = true;
-    const r: StepResult = { step: "Assignment-Datei-Download", endpoint: "/restapi/personal/assignments/{elementId}/files/{fileId}/v1", status: "?" };
+    const r: StepResult = { step: "Assignment file download", endpoint: "/restapi/personal/assignments/{elementId}/files/{fileId}/v1", status: "?" };
     try {
       const res = await client.get(fill("/restapi/personal/assignments/{elementId}/files/{fileId}/v1", { elementId, fileId: fileObj.FileId }), {
         redirect: "manual",
@@ -615,44 +615,44 @@ async function main() {
     steps.push(r);
     logStep(r);
   }
-  if (!assignmentFileTested) findings.push("In den ersten 3 Aufgaben wurde keine Datei (FileId) gefunden.");
+  if (!assignmentFileTested) findings.push("No file (FileId) found in the first 3 tasks.");
 
-  // --- 6. Neuigkeiten ---
-  console.log("\n── Neuigkeiten");
-  const stream = entities(await call("Notification-Stream v2 (inkl. Light Bulletins)", "/restapi/personal/notifications/stream/v2?showLightBulletins=true&PageSize=30"));
+  // --- 6. News ---
+  console.log("\n── News");
+  const stream = entities(await call("Notification stream v2 (incl. light bulletins)", "/restapi/personal/notifications/stream/v2?showLightBulletins=true&PageSize=30"));
   await call("Notifications v2", "/restapi/personal/notifications/v2?PageSize=20");
   await call("Newsfeed", "/restapi/personal/notifications/newsfeed/v1?PageSize=20");
-  await call("Ungelesen-Zähler", "/restapi/personal/notifications/unread-count/v1");
+  await call("Unread counter", "/restapi/personal/notifications/unread-count/v1");
   const notifId = stream.find((n) => n.NotificationId)?.NotificationId;
-  if (notifId) await call("Notification: Elemente/Anhänge", "/restapi/personal/notifications/{notificationId}/elements/v1", { notificationId: notifId });
+  if (notifId) await call("Notification: elements/attachments", "/restapi/personal/notifications/{notificationId}/elements/v1", { notificationId: notifId });
 
-  // --- 7. Nachrichten ---
-  console.log("\n── Nachrichten");
+  // --- 7. Messages ---
+  console.log("\n── Messages");
   const threads = entities(await call("Threads v4", "/restapi/personal/instantmessages/messagethreads/v4?pageSize=10"));
-  await call("Ungelesene Nachrichten", "/restapi/personal/instantmessages/messagethreads/unread-count/v1");
+  await call("Unread messages", "/restapi/personal/instantmessages/messagethreads/unread-count/v1");
   const threadId = threads[0]?.InstantMessageThreadId;
   if (threadId) {
-    await call("Thread-Nachrichten v3", "/restapi/personal/instantmessages/messagethreads/{threadId}/messages/v3?pageSize=20", { threadId });
+    await call("Thread messages v3", "/restapi/personal/instantmessages/messagethreads/{threadId}/messages/v3?pageSize=20", { threadId });
   }
   const attachmentUrl = collectObjectsWithKey(threads, /^AttachmentUrl$/)
     .map((m) => m.AttachmentUrl)
     .find((u) => typeof u === "string" && u.startsWith("http"));
-  if (attachmentUrl) await probeDirectFile("Nachrichten-Anhang (direkt)", attachmentUrl);
-  else findings.push("Kein Nachrichten-Anhang in den ersten 10 Threads gefunden.");
-  if (bulletinImageUrls[0]) await probeDirectFile("Bulletin-Bild (direkt)", bulletinImageUrls[0]);
+  if (attachmentUrl) await probeDirectFile("Message attachment (direct)", attachmentUrl);
+  else findings.push("No message attachment found in the first 10 threads.");
+  if (bulletinImageUrls[0]) await probeDirectFile("Bulletin image (direct)", bulletinImageUrls[0]);
 
-  // --- 8. Datei-Downloads ---
-  console.log("\n── Datei-Downloads (Kurs-Ressourcen)");
+  // --- 8. File downloads ---
+  console.log("\n── File downloads (course resources)");
   const typeCounts: Record<string, number> = {};
   for (const r of resourcePool) typeCounts[String(r.ElementType)] = (typeCounts[String(r.ElementType)] ?? 0) + 1;
-  steps.push({ step: "Ressourcen-Typen (Stichprobe)", endpoint: "-", status: "analysis", typeCounts });
-  // Pro ElementType höchstens ein Kandidat, Datei-ähnliche zuerst
+  steps.push({ step: "Resource types (sample)", endpoint: "-", status: "analysis", typeCounts });
+  // At most one candidate per ElementType, file-like ones first
   const byType = new Map<string, Json>();
   for (const r of resourcePool) if (!byType.has(String(r.ElementType))) byType.set(String(r.ElementType), r);
   const candidates = [...byType.values()]
     .sort((a, b) => Number(/file|document/i.test(String(b.ElementType))) - Number(/file|document/i.test(String(a.ElementType))))
     .slice(0, MAX_DOWNLOADS);
-  if (!candidates.length) findings.push("Keine Ressourcen (außer Ordnern) in den Stichproben-Kursen gefunden.");
+  if (!candidates.length) findings.push("No resources (except folders) found in the sampled courses.");
   for (const [i, r] of candidates.entries()) await probeResourceDownload(r, i + 1);
 
   // --- Report ---
@@ -660,7 +660,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     base: BASE,
     redacted: true,
-    note: "Nur Struktur: Feldnamen/Typen, Status, Anzahlen, URL-Muster und Enum-Werte. Keine Inhalte.",
+    note: "Structure only: field names/types, status, counts, URL patterns and enum values. No content.",
     auth,
     findings,
     steps,
@@ -668,13 +668,13 @@ async function main() {
   await Bun.write(`${OUT}/report2.json`, JSON.stringify(report, null, 2));
 
   const ok = steps.filter((s) => typeof s.status === "number" && s.status < 300).length;
-  console.log(`\nFertig: ${ok}/${steps.length} Schritte erfolgreich.`);
-  console.log(`Redacted Report: ${OUT}/report2.json  (enthält keine Inhalte – den kann Claude direkt lesen)`);
-  if (SAVE) console.log(`Rohdaten: ${RAW}/  (PRIVAT – enthält personenbezogene Daten, nicht teilen!)`);
+  console.log(`\nDone: ${ok}/${steps.length} steps successful.`);
+  console.log(`Redacted report: ${OUT}/report2.json  (contains no content – safe to share)`);
+  if (SAVE) console.log(`Raw data: ${RAW}/  (PRIVATE – contains personal data, do not share!)`);
 }
 
 if (import.meta.main) main().catch((err) => {
-  console.error(`\nFehler: ${err instanceof Error ? err.message : err}`);
+  console.error(`\nError: ${err instanceof Error ? err.message : err}`);
   process.exit(1);
 });
 export { redactUrl, schemaOf, sensitivePaths, newCtx, extractLinks };

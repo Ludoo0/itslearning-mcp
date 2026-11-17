@@ -10,6 +10,7 @@ import { type AppContext, createContext } from "./context";
 import { FileCache } from "./files/cache";
 import { FileService } from "./files/service";
 import { registerSecret } from "./log";
+import { getLabels } from "./redaction/labels";
 import { Redactor } from "./redaction/redactor";
 import { PersonRegistry } from "./redaction/registry";
 import { loadOrCreateSecret } from "./redaction/secretKey";
@@ -23,14 +24,14 @@ import { registerOverviewTools } from "./tools/overview";
 import { registerTaskTools } from "./tools/tasks";
 import { WebBrowser } from "./websession/browser";
 
-const INSTRUCTIONS = `Lesender Zugriff auf ein itslearning-Konto (Lernplattform einer Schule).
-- Einstieg: itslearning_overview (überfällige/fällige Aufgaben, Neuigkeiten, ungelesene Nachrichten).
-- Aufgaben: itslearning_list_tasks, Details mit itslearning_get_task (elementId).
-- Kurse: itslearning_list_courses (courseId), Ankündigungen eines Kurses: itslearning_list_bulletins.
-- Neuigkeiten: itslearning_list_news. Nachrichten: itslearning_list_message_threads → itslearning_get_message_thread.
-- Dateien: Tools liefern fileRef-Werte (Aufgaben-Anhänge, Nachrichten-Anhänge, Bilder, Kurs-Dateien via itslearning_list_course_files) → itslearning_download_file. Standard: PDF/DOCX/Text als geschwärzter Text.
-- Datenschutz: Das eigene Konto erscheint als "Ich", Lehrkräfte als "Frau/Herr Nachname" oder "Lehrkraft Nachname", andere Personen als Pseudonym ("Schüler:in-7F3A", "Person-7F3A"). E-Mail-Adressen, Telefonnummern und interne itslearning-Links sind entfernt. Versuche nicht, geschwärzte Daten zu rekonstruieren.
-- Der Server kann nichts verändern (keine Abgaben, keine Nachrichten senden).`;
+const INSTRUCTIONS = `Read-only access to an itslearning account (a school learning platform).
+- Start with itslearning_overview (recently overdue and upcoming tasks, recent news, unread messages).
+- Tasks: itslearning_list_tasks, details via itslearning_get_task (elementId).
+- Courses: itslearning_list_courses (courseId); announcements of a course: itslearning_list_bulletins.
+- News: itslearning_list_news. Messages: itslearning_list_message_threads → itslearning_get_message_thread.
+- Files: tools return fileRef values (task attachments, message attachments, images, course files via itslearning_list_course_files) → itslearning_download_file. Default: PDF/DOCX/text are returned as redacted text in the field \`text\`.
+- Privacy: the account owner appears as "Me" (or the configured redaction language, e.g. "Ich"), teachers by last name ("Teacher Miller", optionally with salutation), other people as pseudonyms ("Student-7F3A", "Person-7F3A"). Email addresses, phone numbers and internal itslearning links are removed. Do not try to reconstruct redacted data.
+- The server cannot change anything (no submissions, no sending messages).`;
 
 export function createServer(ctx: AppContext): McpServer {
   const server = new McpServer({ name: "itslearning-mcp", version: pkg.version }, { instructions: INSTRUCTIONS });
@@ -48,21 +49,25 @@ export function createApp(cfg: Config) {
   registerSecret(cfg.password);
   registerSecret(cfg.apiKey);
   const auth = new TokenStore(cfg);
-  // Eine gemeinsame Drosselung für REST-API und Web-Oberfläche
+  // One shared rate limiter for the REST API and the web interface
   const limiter = new Limiter(cfg.maxConcurrency, cfg.minRequestIntervalMs);
   const api = new ApiClient(cfg, auth, fetch, undefined, limiter);
   const it = new Itslearning(api);
+  const labels = getLabels(cfg.redactionLanguage);
   const people = new PersonRegistry({
     secret: loadOrCreateSecret(cfg.dataDir, cfg.redactionSecret),
     baseUrl: cfg.baseUrl,
     teachers: new TeacherDirectory(join(cfg.dataDir, "teachers.json")),
     redactTeachers: cfg.redactTeachers,
     teacherRoleTitles: cfg.teacherRoleTitles,
+    labels,
   });
   const files = new FileService(it, new WebBrowser(limiter), {
     maxBytes: cfg.maxFileMb * 1_048_576,
     cache: new FileCache(join(cfg.dataDir, "files")),
+    labels,
   });
-  const ctx = createContext({ cfg, it, redactor: new Redactor(people), files });
+  const redactor = new Redactor(people, { keepWords: new Set(cfg.redactionKeepWords) });
+  const ctx = createContext({ cfg, it, redactor, files });
   return { ctx, server: createServer(ctx) };
 }

@@ -2,12 +2,12 @@ import { detectLoginMode } from "./auth/loginMode";
 import type { Itslearning } from "./api/endpoints";
 import type { Config } from "./config";
 import { ToolError } from "./errors";
-import { log } from "./log";
 import type { FileService } from "./files/service";
+import { log } from "./log";
 import type { Redactor } from "./redaction/redactor";
 import { registerThread } from "./tools/people";
 
-/** Die Teile der API, die Tools nutzen (als Interface, damit Tests Fakes einsetzen können). */
+/** The parts of the API used by tools (an interface so tests can plug in fakes). */
 export type ItslearningApi = Pick<
   Itslearning,
   | "person"
@@ -35,7 +35,7 @@ export type AppContext = {
   it: ItslearningApi;
   redactor: Redactor;
   files: FileService;
-  /** Stellt sicher, dass Login + Registrierung des eigenen Kontos erfolgt sind (Voraussetzung für Schwärzung). */
+  /** Ensures login and registration of the own account have happened (prerequisite for redaction). */
   ensureReady(): Promise<void>;
   now(): Date;
 };
@@ -55,32 +55,32 @@ export function createContext(opts: {
     try {
       const person = await opts.it.person();
       opts.redactor.registerSelf(person);
-      log.info("Bei itslearning angemeldet", { instance: opts.cfg.baseUrl });
+      log.info("Logged in to itslearning", { instance: opts.cfg.baseUrl });
     } catch (e) {
       if (e instanceof ToolError && e.fatal) {
         if (e.code === "AUTH_FAILED" && (await detectLoginMode(opts.cfg.baseUrl, opts.fetchImpl)) === "federated-only") {
           fatal = new ToolError(
             "SSO_NOT_SUPPORTED",
-            "Diese itslearning-Instanz bietet nur Login über einen fremden Anbieter (Single Sign-on) an – das wird in v1 nicht unterstützt.",
+            "This itslearning instance only offers login via an external identity provider (single sign-on), which is not supported.",
             undefined,
             true,
           );
         } else {
           fatal = e;
         }
-        log.error("Anmeldung dauerhaft fehlgeschlagen – keine weiteren Login-Versuche bis zum Neustart", { code: fatal.code });
+        log.error("Login failed permanently – no further login attempts until restart", { code: fatal.code });
         throw fatal;
       }
       throw e;
     }
 
-    // Namens-Wörterbuch vorwärmen: Teilnehmer der neuesten Unterhaltungen (Mitschüler:innen, Lehrkräfte),
-    // damit ihre Namen auch in Aufgaben- und Neuigkeiten-Texten erkannt werden. Fehler hier sind nicht kritisch.
+    // Warm up the name dictionary with participants of the latest conversations (classmates, teachers)
+    // so their names are also recognized in task and news texts. Errors here are not critical.
     try {
       const threads = await opts.it.messageThreads(50);
       for (const t of threads.Threads?.EntityArray ?? []) registerThread(opts.redactor.people, t);
     } catch {
-      log.warn("Namens-Wörterbuch konnte nicht vorgewärmt werden (Nachrichten nicht verfügbar)");
+      log.warn("Could not warm up the name dictionary (messages not available)");
     }
   };
 
@@ -93,7 +93,7 @@ export function createContext(opts: {
     ensureReady() {
       if (fatal) return Promise.reject(fatal);
       ready ??= init().catch((e) => {
-        ready = undefined; // nicht-fatale Fehler: beim nächsten Tool-Aufruf erneut versuchen
+        ready = undefined; // non-fatal errors: retry on the next tool call
         throw e;
       });
       return ready;

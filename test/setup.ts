@@ -1,4 +1,4 @@
 import { setLogLevel } from "../src/log";
 
-// Erwartete Warnungen (Fehlerpfade) nicht in die Testausgabe schreiben
+// Keep expected warnings (error paths) out of the test output
 setLogLevel("error");

@@ -1,9 +1,9 @@
 /**
- * Gemeinsame Helfer für die itslearning-Probe-Skripte:
- * Terminal-Eingabe, OAuth2-Login, Token-Refresh, API-Client.
+ * Shared helpers for the itslearning scripts:
+ * terminal input, OAuth2 login, token refresh, API client.
  */
 
-/** Instanz-URL, z. B. https://meineschule.itslearning.com – aus ITSL_BASE_URL oder interaktiv (promptCredentials). */
+/** Instance URL, e.g. https://yourschool.itslearning.com – from ITSL_BASE_URL or interactively (promptCredentials). */
 export let BASE = normalizeBase(process.env.ITSL_BASE_URL ?? "");
 
 function normalizeBase(url: string): string {
@@ -11,19 +11,19 @@ function normalizeBase(url: string): string {
   if (!trimmed) return "";
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
-// Öffentliche Client-ID der offiziellen itslearning-Mobile-App
+// Public client id of the official itslearning mobile app
 export const CLIENT_ID = "10ae9d30-1853-48ff-81cb-47b58a325685";
 export const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) itslearning-mcp-probe";
 
-// ---------- Terminal-Eingabe ----------
+// ---------- Terminal input ----------
 
-/** Liest eine Zeile aus dem Terminal; bei hidden=true mit * statt Klartext. */
+/** Reads a line from the terminal; with hidden=true it echoes * instead of the text. */
 function readInput(question: string, hidden: boolean): Promise<string> {
   return new Promise((resolve, reject) => {
     const stdin = process.stdin;
     process.stdout.write(question);
     if (!stdin.isTTY) {
-      reject(new Error("Kein interaktives Terminal – bitte direkt in PowerShell/Terminal starten (oder ITSL_USER/ITSL_PASS setzen)."));
+      reject(new Error("No interactive terminal – run this directly in a terminal (or set ITSL_USERNAME/ITSL_PASSWORD)."));
       return;
     }
     let input = "";
@@ -62,11 +62,11 @@ export const readLine = (q: string) => readInput(q, false).then((s) => s.trim())
 export const readHidden = (q: string) => readInput(q, true);
 
 export async function promptCredentials(): Promise<{ username: string; password: string }> {
-  if (!BASE) BASE = normalizeBase(await readLine("itslearning-URL (z. B. meineschule.itslearning.com): "));
-  if (!BASE) throw new Error("Keine itslearning-URL angegeben (ITSL_BASE_URL).");
-  const username = process.env.ITSL_USER || (await readLine("Benutzername: "));
-  const password = process.env.ITSL_PASS || (await readHidden("Passwort:     "));
-  if (!username || !password) throw new Error("Benutzername und Passwort werden benötigt.");
+  if (!BASE) BASE = normalizeBase(await readLine("itslearning URL (e.g. yourschool.itslearning.com): "));
+  if (!BASE) throw new Error("No itslearning URL given (ITSL_BASE_URL).");
+  const username = process.env.ITSL_USERNAME || process.env.ITSL_USER || (await readLine("Username: "));
+  const password = process.env.ITSL_PASSWORD || process.env.ITSL_PASS || (await readHidden("Password: "));
+  if (!username || !password) throw new Error("Username and password are required.");
   return { username, password };
 }
 
@@ -86,9 +86,9 @@ async function tokenRequest(params: Record<string, string>): Promise<TokenRespon
     body: new URLSearchParams({ client_id: CLIENT_ID, ...params }),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`Token-Anfrage fehlgeschlagen (HTTP ${res.status}): ${text.slice(0, 200)}`);
+  if (!res.ok) throw new Error(`Token request failed (HTTP ${res.status}): ${text.slice(0, 200)}`);
   const json = JSON.parse(text) as TokenResponse;
-  if (!json.access_token) throw new Error(`Kein access_token in Antwort`);
+  if (!json.access_token) throw new Error(`No access_token in response`);
   return json;
 }
 
@@ -98,7 +98,7 @@ export const loginWithPassword = (username: string, password: string) =>
 export const refreshToken = (refresh_token: string) =>
   tokenRequest({ grant_type: "refresh_token", refresh_token });
 
-// ---------- API-Client mit Auto-Refresh ----------
+// ---------- API client with auto refresh ----------
 
 export class ItslearningClient {
   private expiresAt: number;
@@ -113,12 +113,12 @@ export class ItslearningClient {
 
   private async ensureFresh() {
     if (Date.now() < this.expiresAt - 30_000) return;
-    if (!this.token.refresh_token) throw new Error("Token abgelaufen und kein Refresh-Token vorhanden.");
+    if (!this.token.refresh_token) throw new Error("Token expired and no refresh token available.");
     this.token = await refreshToken(this.token.refresh_token);
     this.expiresAt = this.computeExpiry(this.token);
   }
 
-  /** GET gegen die REST-API (Pfad relativ zu BASE oder absolute URL). */
+  /** GET against the REST API (path relative to BASE or absolute URL). */
   async get(pathOrUrl: string, init: RequestInit = {}): Promise<Response> {
     await this.ensureFresh();
     const url = pathOrUrl.startsWith("http") ? pathOrUrl : BASE + pathOrUrl;

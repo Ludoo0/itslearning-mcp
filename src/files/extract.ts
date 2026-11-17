@@ -1,4 +1,4 @@
-/** Textextraktion aus Dateien (Spec 5.10): PDF (unpdf), DOCX (mammoth), Text-Formate. */
+/** Text extraction from files (spec 5.10): PDF (unpdf), DOCX (mammoth), text formats. */
 import { log } from "../log";
 
 const TEXT_MIME_RE = /^(text\/|application\/(json|xml|csv|x-csv|markdown|rtf))/i;
@@ -29,7 +29,7 @@ const MIME_BY_EXT: Record<string, string> = {
   zip: "application/zip",
 };
 
-/** MIME-Typ aus Header; bei generischen Typen aus der Dateiendung raten. */
+/** MIME type from the header; for generic types guess from the file extension. */
 export function resolveMimeType(header: string | null, name: string): string {
   const h = (header ?? "").split(";")[0]!.trim().toLowerCase();
   if (h && h !== "application/octet-stream" && h !== "binary/octet-stream") return h;
@@ -45,7 +45,7 @@ export function canExtractText(mimeType: string, name: string): boolean {
   );
 }
 
-/** Liefert den Rohtext (noch NICHT geschwärzt) oder undefined. */
+/** Returns the raw text (NOT redacted yet) or undefined. */
 export async function extractText(data: Uint8Array, mimeType: string, name: string): Promise<string | undefined> {
   try {
     if (mimeType === "application/pdf") {
@@ -63,7 +63,7 @@ export async function extractText(data: Uint8Array, mimeType: string, name: stri
       return new TextDecoder("utf-8", { fatal: false }).decode(data).trim() || undefined;
     }
   } catch (e) {
-    log.warn("Textextraktion fehlgeschlagen", { mimeType, error: e instanceof Error ? e.name : "unknown" });
+    log.warn("Text extraction failed", { mimeType, error: e instanceof Error ? e.name : "unknown" });
   }
   return undefined;
 }

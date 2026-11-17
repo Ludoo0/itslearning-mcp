@@ -1,12 +1,12 @@
 /**
- * Datei-Referenzen (Spec 5.10). Agenten sehen nur diese Referenzen, nie Download-URLs.
- * Die Referenz enthält ausschließlich itslearning-IDs (keine Geheimnisse) und lässt sich
- * zustandslos auflösen – auch nach einem Neustart.
+ * File references (spec 5.10). Agents only ever see these references, never download URLs.
+ * A reference contains itslearning ids only (no secrets) and can be resolved
+ * statelessly – even after a restart.
  *
- *   e_<elementId>                     Kurs-Element (Datei-Ressource)      → SSO + Web-Session
- *   a_<elementId>_<fileId>            Anhang einer Aufgabe                → assignments/{id}/files/{fileId}/v1
- *   m_<threadId>_<messageId>          Anhang einer Nachricht              → AttachmentUrl (Token)
- *   i_<courseId>_<bulletinId>_<n>     Bild eines Bulletins                → OriginalFileUrl (Token)
+ *   e_<elementId>                     course element (file resource)      → SSO + web session
+ *   a_<elementId>_<fileId>            task attachment                     → assignments/{id}/files/{fileId}/v1
+ *   m_<threadId>_<messageId>          message attachment                  → AttachmentUrl (token)
+ *   i_<courseId>_<bulletinId>_<n>     bulletin image                      → OriginalFileUrl (token)
  */
 import { ToolError } from "../errors";
 
@@ -39,7 +39,7 @@ export function parseRef(ref: string): FileSource {
     if (k === "m" && b && !c) return { kind: "message", threadId: n(a), messageId: n(b) };
     if (k === "i" && b && c) return { kind: "bulletinImage", courseId: n(a), bulletinId: n(b), index: n(c) };
   }
-  throw new ToolError("FILE_REF_UNKNOWN", "Datei-Referenz unbekannt – bitte die Liste (Aufgabe, Nachricht, Kurs-Dateien) erneut abrufen.");
+  throw new ToolError("FILE_REF_UNKNOWN", "Unknown file reference – please fetch the list again (task, message, course files).");
 }
 
 export type FileRefDto = { fileRef: string; name: string; kind: "file" | "image" | "unknown" };

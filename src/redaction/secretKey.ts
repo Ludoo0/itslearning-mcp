@@ -1,5 +1,5 @@
 /**
- * HMAC-Secret für stabile Pseudonyme (Spec 6.2): REDACTION_SECRET oder einmalig erzeugt in DATA_DIR/secret.
+ * HMAC secret for stable pseudonyms (spec 6.2): REDACTION_SECRET, or generated once and stored in DATA_DIR/secret.
  */
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -24,7 +24,7 @@ export function loadOrCreateSecret(dataDir: string, configured?: string): string
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(path, secret, { mode: 0o600 });
   } catch {
-    log.warn("Secret für Pseudonyme konnte nicht gespeichert werden – Pseudonyme ändern sich beim Neustart");
+    log.warn("Could not persist the pseudonym secret – pseudonyms will change after a restart");
   }
   registerSecret(secret);
   return secret;

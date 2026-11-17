@@ -1,6 +1,6 @@
 /**
- * Kern des Smoke-Tests (siehe scripts/smoke.ts): ruft alle Tools auf und prüft die Ausgaben
- * gegen echte Namen aus der API sowie Geheimnis-Muster. Gibt nur Zählungen aus.
+ * Core of the smoke test (see scripts/smoke.ts): calls every tool and checks all output against
+ * real names fetched from the API plus secret patterns. Prints counts and masked structure only.
  */
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -11,16 +11,20 @@ import { STOPWORDS } from "../src/redaction/freetext";
 export type SmokeOptions = { redactTeachers: boolean; details?: boolean; out?: (line: string) => void };
 export type SmokeResult = { leaks: number; runs: { tool: string; ok: boolean; code?: string }[]; participantsStatus: Record<string, string> };
 
+/** Display words the server inserts itself (all label languages) – never sensitive, kept readable in structures. */
+const DISPLAY_WORDS =
+  /^(Me|Teacher|Student|Person|Unknown|Mr|Mrs|Ms|Miss|Dr|name|Ich|Lehrkraft|Schüler:in|Frau|Herr|Herrn|Name|Unbekannt)$/;
+
 export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptions): Promise<SmokeResult> {
   const out = opts.out ?? ((l: string) => console.log(l));
   const DETAILS = opts.details ?? false;
   const cfg = { redactTeachers: opts.redactTeachers };
-  // ---------- Tool-Aufrufe ----------
+  // ---------- Tool calls ----------
 
   type Run = { tool: string; ok: boolean; code?: string; ms: number; output: string; data?: Record<string, unknown> };
   const runs: Run[] = [];
 
-  /** Text + strukturierte Daten, OHNE Datei-/Bild-Inhalte (die sind per Definition nicht geschwärzt). */
+  /** Text + structured data, WITHOUT file/image content (which is unredacted by definition). */
   function outputOf(res: CallToolResult): string {
     const parts = res.content.map((c) => (c.type === "text" ? c.text : `[${c.type}]`));
     return parts.join("\n") + "\n" + JSON.stringify(res.structuredContent ?? {});
@@ -42,15 +46,15 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
 
   const overview = await call("itslearning_overview");
   if (!overview && runs[0]?.code === "AUTH_FAILED") {
-    console.error("\nAnmeldung fehlgeschlagen – Abbruch.");
-    process.exit(1);
+    out("\nLogin failed – aborting.");
+    return { leaks: -1, runs, participantsStatus: {} };
   }
   const courses = arr((await call("itslearning_list_courses"))?.courses);
   const tasks = arr((await call("itslearning_list_tasks", { status: "all", limit: 50 }))?.tasks);
   const taskWithFiles = tasks[0];
   let taskDetail: Obj | undefined;
   if (taskWithFiles) taskDetail = await call("itslearning_get_task", { elementId: taskWithFiles.elementId });
-  const news = arr((await call("itslearning_list_news", { limit: 20 }))?.items);
+  await call("itslearning_list_news", { limit: 20 });
 
   const courseForBulletins = courses.find((c) => c.newBulletins > 0) ?? courses[0];
   const bulletins = courseForBulletins ? arr((await call("itslearning_list_bulletins", { courseId: courseForBulletins.courseId, limit: 10 }))?.bulletins) : [];
@@ -59,7 +63,7 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
   const threadMsgs: Obj[] = [];
   for (const t of threads.slice(0, 3)) threadMsgs.push(...arr((await call("itslearning_get_message_thread", { threadId: t.threadId, limit: 30 }))?.messages));
 
-  // Kurs mit Dateien suchen (max. 4 Kurse probieren)
+  // Find a course with files (try at most 4 courses)
   let courseFiles: Obj[] = [];
   let fileCourseId: number | undefined;
   for (const c of courses.slice(0, 4)) {
@@ -71,7 +75,7 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     }
   }
 
-  // Downloads (Text-Modus bzw. auto ohne Blob-Inhalt in der Prüfung)
+  // Downloads (auto mode; blob content is excluded from the check)
   const fileRefs = new Set<string>();
   for (const i of courseFiles.filter((x) => x.fileRef).slice(0, 3)) fileRefs.add(i.fileRef);
   for (const f of arr(taskDetail?.files).slice(0, 1)) fileRefs.add(f.fileRef);
@@ -79,7 +83,7 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
   for (const bl of bulletins) for (const img of arr(bl.images).slice(0, 1)) fileRefs.add(img.fileRef);
   for (const ref of fileRefs) await call("itslearning_download_file", { fileRef: ref });
 
-  // ---------- Echte Namen direkt über die API sammeln ----------
+  // ---------- Collect real names directly from the API ----------
 
   type NameRec = { id: number; first?: string; last?: string; full?: string };
   const names = new Map<number, NameRec>();
@@ -103,40 +107,41 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
   }
   const participantsStatus: Record<string, string> = {};
   for (const c of [courseForBulletins?.courseId, fileCourseId].filter((x): x is number => typeof x === "number")) {
+    const key = `course ${Object.keys(participantsStatus).length + 1}`;
     try {
       const parts = await ctx.it.courseParticipants(c);
-      participantsStatus[`Kurs ${Object.keys(participantsStatus).length + 1}`] = `abrufbar (${parts.length} Personen)`;
+      participantsStatus[key] = `available (${parts.length} people)`;
       for (const p of parts) add(p.PersonId, { full: p.FullName ?? undefined });
     } catch (e) {
-      participantsStatus[`Kurs ${Object.keys(participantsStatus).length + 1}`] = `NICHT abrufbar (${(e as { code?: string }).code ?? "Fehler"})`;
+      participantsStatus[key] = `NOT available (${(e as { code?: string }).code ?? "error"})`;
     }
   }
 
-  // ---------- Verbotene / erlaubte Begriffe ----------
+  // ---------- Forbidden / allowed terms ----------
 
   const people = ctx.redactor.people;
   const allowed = new Set<string>();
-  const forbidden = new Map<string, string>(); // Begriff (lowercase) → Kategorie
+  const forbidden = new Map<string, string>(); // term (lowercase) → category
   for (const r of names.values()) {
     const role = people.role(r.id);
     const teacherVisible = role === "teacher" && !cfg.redactTeachers;
     if (teacherVisible && r.last) allowed.add(r.last.toLowerCase());
-    const cat = role === "self" ? "eigenes Konto" : role === "teacher" ? "Lehrkraft" : role === "student" ? "Schüler:in" : "Person (Rolle unbekannt)";
+    const cat = role === "self" ? "own account" : role === "teacher" ? "teacher" : role === "student" ? "student" : "person (role unknown)";
     const terms: [string | undefined, string][] = [
-      [r.full, `${cat}: Vollname`],
-      [r.first, `${cat}: Vorname`],
-      [teacherVisible ? undefined : r.last, `${cat}: Nachname`],
+      [r.full, `${cat}: full name`],
+      [r.first, `${cat}: first name`],
+      [teacherVisible ? undefined : r.last, `${cat}: last name`],
     ];
-    // Vollname ohne Feldtrennung (Kurs-Teilnehmer:innen): wie die Registry trennen –
-    // "Nachname, Vorname" bzw. "Vorname … Nachname"
+    // Full name without separate fields (course participants): split like the registry does –
+    // "Last, First" or "First … Last"
     if (r.full && !r.first && !r.last) {
       const words = r.full.split(/\s+/).filter(Boolean);
       const [lastPart, firstPart] = r.full.includes(",")
         ? r.full.split(",", 2).map((x) => x.trim())
         : [words.at(-1) ?? "", words.slice(0, -1).join(" ")];
       if (teacherVisible && lastPart) allowed.add(lastPart.toLowerCase());
-      for (const p of (firstPart ?? "").split(/\s+/)) terms.push([p, `${cat}: Vorname (aus Vollname)`]);
-      if (!teacherVisible) for (const p of (lastPart ?? "").split(/\s+/)) terms.push([p, `${cat}: Nachname (aus Vollname)`]);
+      for (const p of (firstPart ?? "").split(/\s+/)) terms.push([p, `${cat}: first name (from full name)`]);
+      if (!teacherVisible) for (const p of (lastPart ?? "").split(/\s+/)) terms.push([p, `${cat}: last name (from full name)`]);
     }
     for (const [t, c] of terms) {
       const k = t?.toLowerCase();
@@ -151,21 +156,20 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
   }
 
   const SECRET_PATTERNS: [string, RegExp][] = [
-    ["Token-Parameter", /[?&](Token|Signature|sign|Hash|ApiSessionId)=/i],
-    ["Datei-Server-URL", /filerepository\.itslearning|filecache\.itslearning/i],
-    ["Session-/SSO-URL", /LoginSSO|ProcessLogin|MobileAppLoginSso|DownloadRedirect|ViewFile\.aspx|File\/View\.aspx/i],
-    ["interne itslearning-URL", /https?:\/\/[\w.-]*itslearning\.com\//i],
-    ["E-Mail-Adresse", /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+\.[\p{L}]{2,}/u],
+    ["token parameter", /[?&](Token|Signature|sign|Hash|ApiSessionId)=/i],
+    ["file server URL", /filerepository\.itslearning|filecache\.itslearning/i],
+    ["session/SSO URL", /LoginSSO|ProcessLogin|MobileAppLoginSso|DownloadRedirect|ViewFile\.aspx|File\/View\.aspx/i],
+    ["internal itslearning URL", /https?:\/\/[\w.-]*itslearning\.com\//i],
+    ["email address", /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+\.[\p{L}]{2,}/u],
     ["PersonId", /PersonId/],
   ];
 
-  // ---------- Prüfung ----------
+  // ---------- Check ----------
 
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const mask = (s: string) => s[0] + "*".repeat(Math.max(1, s.length - 1));
-  // Struktur rund um einen Treffer: Buchstaben → x, Ziffern → 9. Nur die eigenen Anzeigewörter des
-  // Servers (Lehrkraft, Frau, Schüler:in …) bleiben lesbar – sie verraten nichts, zeigen aber den Kontext.
-  const DISPLAY_WORDS = /^(Lehrkraft|Frau|Herr|Herrn|Schüler:in|Person|Ich|Name|Unbekannt)$/;
+  // Structure around a hit: letters → x, digits → 9. Only the server's own display words
+  // (Teacher, Mrs, Student …) stay readable – they reveal nothing but show the context.
   const shape = (t: string) =>
     t
       .replace(/\s+/g, " ")
@@ -176,7 +180,7 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     shape(text.slice(Math.max(0, i - 40), i)) + middle + shape(text.slice(i + len, i + len + 40));
 
   let leaks = 0;
-  out("\nLeak-Prüfung");
+  out("\nLeak check");
   for (const run of runs) {
     const hits = new Map<string, Set<string>>();
     const structures = new Map<string, string[]>();
@@ -186,12 +190,12 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
       if (!hits.has(cat)) hits.set(cat, new Set());
       hits.get(cat)!.add(term);
       const list = structures.get(cat) ?? [];
-      for (const m of ms.slice(0, 2)) if (list.length < 3) list.push(around(run.output, m.index ?? 0, m[0].length, "⟨Treffer⟩"));
+      for (const m of ms.slice(0, 2)) if (list.length < 3) list.push(around(run.output, m.index ?? 0, m[0].length, "⟨hit⟩"));
       structures.set(cat, list);
     }
     for (const [label, re] of SECRET_PATTERNS) {
       if (!re.test(run.output)) continue;
-      hits.set(label, new Set(["(Muster)"]));
+      hits.set(label, new Set(["(pattern)"]));
       const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
       structures.set(label, [...run.output.matchAll(g)].slice(0, 3).map((m) => around(run.output, m.index ?? 0, m[0].length, m[0].replace(/\p{N}/gu, "9"))));
     }
@@ -200,13 +204,13 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     const kind = run.data ? [run.data.kind, run.data.mimeType].filter(Boolean).join(", ") : "";
     out(`❌ ${run.tool}${kind ? `  (${kind})` : ""}`);
     for (const [cat, terms] of hits) {
-      out(`     ${cat}: ${terms.size} Treffer${DETAILS && !terms.has("(Muster)") ? ` (${[...terms].map(mask).join(", ")})` : ""}`);
-      if (DETAILS) for (const st of structures.get(cat) ?? []) out(`       Struktur: …${st}…`);
+      out(`     ${cat}: ${terms.size} hit(s)${DETAILS && !terms.has("(pattern)") ? ` (${[...terms].map(mask).join(", ")})` : ""}`);
+      if (DETAILS) for (const st of structures.get(cat) ?? []) out(`       structure: …${st}…`);
     }
   }
-  if (!leaks) out("✅ keine Treffer");
+  if (!leaks) out("✅ no hits");
 
-  // ---------- Zusammenfassung ----------
+  // ---------- Summary ----------
 
   const roles = { teacher: 0, student: 0, unknown: 0 };
   for (const r of names.values()) {
@@ -214,14 +218,14 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     if (role in roles) roles[role as keyof typeof roles]++;
   }
   out(`
-  Zusammenfassung
-    Tool-Aufrufe:       ${runs.length} (${runs.filter((r) => r.ok).length} ok, ${runs.filter((r) => !r.ok).length} mit Fehlercode)
-    Fehlercodes:        ${[...new Set(runs.filter((r) => r.code).map((r) => r.code))].join(", ") || "–"}
-    Downloads getestet: ${fileRefs.size}
-    Geprüfte Namen:     ${forbidden.size} Begriffe von ${names.size} Personen (${ambiguous} mehrdeutig übersprungen)
-    Rollen erkannt:     ${roles.teacher} Lehrkräfte, ${roles.student} Schüler:innen, ${roles.unknown} unbekannt
-    Teilnehmerlisten:   ${Object.entries(participantsStatus).map(([k, v]) => `${k}: ${v}`).join(" · ") || "nicht geprüft"}
-    Ergebnis:           ${leaks ? `❌ ${leaks} mögliche Leaks` : "✅ keine Leaks gefunden"}`);
+  Summary
+    Tool calls:          ${runs.length} (${runs.filter((r) => r.ok).length} ok, ${runs.filter((r) => !r.ok).length} with error code)
+    Error codes:         ${[...new Set(runs.filter((r) => r.code).map((r) => r.code))].join(", ") || "–"}
+    Downloads tested:    ${fileRefs.size}
+    Names checked:       ${forbidden.size} terms from ${names.size} people (${ambiguous} ambiguous skipped)
+    Roles detected:      ${roles.teacher} teachers, ${roles.student} students, ${roles.unknown} unknown
+    Participant lists:   ${Object.entries(participantsStatus).map(([k, v]) => `${k}: ${v}`).join(" · ") || "not checked"}
+    Result:              ${leaks ? `❌ ${leaks} possible leak(s)` : "✅ no leaks found"}`);
 
   return { leaks, runs, participantsStatus };
 }

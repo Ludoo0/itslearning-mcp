@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Einstiegspunkt des itslearning-MCP-Servers.
- * MCP_TRANSPORT=stdio (Default, lokale Clients) oder http (Streamable HTTP, z. B. im Docker-Container).
+ * Entry point of the itslearning MCP server.
+ * MCP_TRANSPORT=stdio (default, local clients) or http (Streamable HTTP, e.g. in the Docker container).
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createApp, createServer } from "./app";
@@ -14,15 +14,15 @@ async function main() {
   try {
     cfg = loadConfig();
   } catch (e) {
-    process.stderr.write(`${e instanceof ConfigError ? e.message : "Konfiguration konnte nicht geladen werden."}\n`);
+    process.stderr.write(`${e instanceof ConfigError ? e.message : "Could not load the configuration."}\n`);
     process.exit(2);
   }
   setLogLevel(cfg.logLevel);
 
   const { ctx, server } = createApp(cfg);
 
-  // Früh anmelden, damit Fehler sofort im Log stehen. Der Server startet trotzdem:
-  // Tools melden den Fehler dann strukturiert (und bei falschem Passwort ohne erneuten Login-Versuch).
+  // Log in early so errors show up in the log right away. The server starts anyway:
+  // tools then report the error in a structured way (and a wrong password is never retried).
   ctx.ensureReady().catch(() => {});
 
   let stop: () => Promise<void>;
@@ -30,7 +30,7 @@ async function main() {
     const http = startHttpServer(ctx, {
       host: cfg.host,
       port: cfg.port,
-      apiKey: cfg.apiKey!, // von loadConfig bei http erzwungen
+      apiKey: cfg.apiKey!, // enforced by loadConfig for http
       allowedOrigins: cfg.allowedOrigins,
       createServer,
     });
@@ -39,7 +39,7 @@ async function main() {
     };
   } else {
     await server.connect(new StdioServerTransport());
-    log.info("itslearning-MCP-Server läuft", { transport: "stdio", instance: cfg.baseUrl });
+    log.info("itslearning MCP server running", { transport: "stdio", instance: cfg.baseUrl });
     stop = () => server.close();
   }
 
@@ -52,6 +52,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  log.error("Server-Start fehlgeschlagen", { error: e instanceof Error ? e.message : String(e) });
+  log.error("Server start failed", { error: e instanceof Error ? e.message : String(e) });
   process.exit(1);
 });

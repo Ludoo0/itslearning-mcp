@@ -4,14 +4,17 @@ import type { ApiMessage, ApiThread } from "../api/types";
 import type { AppContext } from "../context";
 import { type FileRefDto, formatRef } from "../files/refs";
 import type { Person } from "../redaction/registry";
-import { redactFileName } from "./files";
 import { isShareableUrl } from "../redaction/secrets";
+import { redactFileName } from "./files";
 import { registerMessage, registerThread } from "./people";
 import { handler, ok } from "./result";
 
 const PREVIEW_LEN = 200;
 const TEXT_LEN = 8_000;
 const MAX_LISTED_PARTICIPANTS = 5;
+/** Threads without a name and with more other participants than this get a group title. */
+const GROUP_TITLE_THRESHOLD = 3;
+const MAX_TEACHERS_IN_TITLE = 3;
 const THREAD_TYPES = ["OneToOne", "Group", "Course"] as const;
 
 export type ThreadDto = {
@@ -31,18 +34,22 @@ export function isUnread(t: ApiThread): boolean {
 }
 
 function threadTitle(ctx: AppContext, t: ApiThread, others: Person[]): string {
+  const L = ctx.redactor.labels;
   if (t.Name?.trim()) return ctx.redactor.title(t.Name);
   const location = (t.LocationRecipients ?? []).map((l) => ctx.redactor.title(l.Title)).filter(Boolean);
   if (location.length) return location.join(", ");
-  if (!others.length) return "Nachrichten";
-  const names = others.slice(0, 3).map((p) => p.display);
-  return names.join(", ") + (others.length > 3 ? ` +${others.length - 3}` : "");
+  if (!others.length) return L.messages;
+  if (others.length > GROUP_TITLE_THRESHOLD) {
+    const teachers = [...new Set(others.filter((p) => p.role === "teacher").map((p) => p.display))].slice(0, MAX_TEACHERS_IN_TITLE);
+    return L.group(others.length + 1, teachers);
+  }
+  return others.map((p) => p.display).join(", ");
 }
 
 export function toThreadDto(ctx: AppContext, t: ApiThread): ThreadDto {
   const people = ctx.redactor.people;
   const others = (t.Participants ?? []).filter((p) => p.PersonId !== people.selfPersonId && !p.IsDeleted).map((p) => people.resolve(p.PersonId));
-  // Große Gruppen: nur Lehrkräfte namentlich (Pseudonym-Listen von 30 Schüler:innen helfen niemandem)
+  // Large groups: list teachers only (pseudonym lists of 30 students help nobody)
   const listed = others.length > MAX_LISTED_PARTICIPANTS ? others.filter((p) => p.role === "teacher") : others;
   const lm = t.LastMessage;
   return {
@@ -63,14 +70,14 @@ export function toThreadDto(ctx: AppContext, t: ApiThread): ThreadDto {
 export const listThreadsInput = {
   limit: z.number().int().min(1).max(50).default(20),
   unreadOnly: z.boolean().default(false),
-  type: z.enum(THREAD_TYPES).optional().describe("OneToOne = Einzelchat, Group = Gruppe, Course = Kurs-Nachricht"),
-  cursor: z.number().int().optional().describe("nextCursor aus einem vorherigen Aufruf (Folgeseite)"),
+  type: z.enum(THREAD_TYPES).optional().describe("OneToOne = direct chat, Group = group, Course = course message"),
+  cursor: z.number().int().optional().describe("nextCursor from a previous call (next page)"),
 };
 type ListThreadsArgs = { limit?: number; unreadOnly?: boolean; type?: (typeof THREAD_TYPES)[number]; cursor?: number };
 
 export async function listThreads(ctx: AppContext, args: ListThreadsArgs) {
   const limit = args.limit ?? 20;
-  // Bei Filtern eine größere Seite holen, damit nach dem Filtern genug übrig bleibt
+  // With filters, fetch a larger page so enough threads remain after filtering
   const pageSize = args.unreadOnly || args.type ? 100 : limit;
   const res = await ctx.it.messageThreads(pageSize, args.cursor);
   const all = res.Threads?.EntityArray ?? [];
@@ -82,9 +89,11 @@ export async function listThreads(ctx: AppContext, args: ListThreadsArgs) {
   const page = threads.slice(0, limit);
   const lastSort = all.at(-1)?.SortIndex;
   const hasMore = Boolean(res.HasMore) || threads.length > limit;
+  // itslearning reports Total = 0 for threads → only include a real total
+  const total = res.Threads?.Total ?? 0;
   return {
     threads: page.map((t) => toThreadDto(ctx, t)),
-    total: res.Threads?.Total ?? all.length,
+    ...(total > 0 ? { total } : {}),
     hasMore,
     ...(res.HasMore && typeof lastSort === "number" ? { nextCursor: lastSort } : {}),
   };
@@ -93,9 +102,9 @@ export async function listThreads(ctx: AppContext, args: ListThreadsArgs) {
 // ---------- get_message_thread ----------
 
 export const getThreadInput = {
-  threadId: z.number().int().positive().describe("threadId aus itslearning_list_message_threads"),
+  threadId: z.number().int().positive().describe("threadId from itslearning_list_message_threads"),
   limit: z.number().int().min(1).max(100).default(30),
-  beforeMessageId: z.number().int().positive().optional().describe("Ältere Nachrichten vor dieser messageId laden"),
+  beforeMessageId: z.number().int().positive().optional().describe("Load older messages before this messageId"),
 };
 type GetThreadArgs = { threadId: number; limit?: number; beforeMessageId?: number };
 
@@ -117,7 +126,7 @@ function toMessageDto(ctx: AppContext, threadId: number, m: ApiMessage): Message
   if (m.AttachmentUrl && !m.IsDeleted) {
     const fileRef = formatRef({ kind: "message", threadId, messageId: m.MessageId });
     ctx.files.remember(fileRef, m.AttachmentUrl);
-    const name = m.AttachmentName ? redactFileName(ctx, m.AttachmentName) : "Anhang";
+    const name = m.AttachmentName ? redactFileName(ctx, m.AttachmentName) : ctx.redactor.labels.attachment;
     attachment = { fileRef, name, kind: /\.(png|jpe?g|gif|webp|heic)$/i.test(name) ? "image" : "file" };
   }
   return {
@@ -135,7 +144,7 @@ function toMessageDto(ctx: AppContext, threadId: number, m: ApiMessage): Message
 
 export async function getThread(ctx: AppContext, args: GetThreadArgs) {
   const limit = args.limit ?? 30;
-  // Thread-Metadaten (Teilnehmer + Rollen) aus der Thread-Liste; die Liste ist gecacht
+  // Thread metadata (participants + roles) from the thread list; the list is cached
   const list = await ctx.it.messageThreads(100);
   const meta = list.Threads?.EntityArray?.find((t) => t.InstantMessageThreadId === args.threadId);
   if (meta) registerThread(ctx.redactor.people, meta);
@@ -145,14 +154,16 @@ export async function getThread(ctx: AppContext, args: GetThreadArgs) {
   for (const m of msgs) registerMessage(ctx.redactor.people, m);
 
   const sorted = [...msgs].sort((a, b) => (Date.parse(a.Created ?? "") || 0) - (Date.parse(b.Created ?? "") || 0) || a.MessageId - b.MessageId);
-  const total = res.Messages?.Total ?? msgs.length;
+  // itslearning reports Total = 0 here → a full page means there may be older messages
+  const total = res.Messages?.Total ?? 0;
+  const hasMore = msgs.length >= limit;
   return {
     threadId: args.threadId,
     ...(meta ? { title: toThreadDto(ctx, meta).title, type: meta.Type ?? "Unknown" } : {}),
     messages: sorted.map((m) => toMessageDto(ctx, args.threadId, m)),
-    total,
-    hasMore: msgs.length < total,
-    ...(msgs.length < total && sorted[0] ? { olderBeforeMessageId: sorted[0].MessageId } : {}),
+    ...(total > 0 ? { total } : {}),
+    hasMore,
+    ...(hasMore && sorted[0] ? { olderBeforeMessageId: sorted[0].MessageId } : {}),
   };
 }
 
@@ -160,30 +171,30 @@ export function registerMessageTools(server: McpServer, ctx: AppContext) {
   server.registerTool(
     "itslearning_list_message_threads",
     {
-      title: "Nachrichten-Threads",
+      title: "Message threads",
       description:
-        "Listet Nachrichten-Unterhaltungen (neueste zuerst) mit letzter Nachricht und Ungelesen-Status. Personen sind pseudonymisiert (Lehrkräfte als „Frau/Herr Nachname“, das eigene Konto als „Ich“).",
+        "Lists message conversations (newest first) with the last message and unread status. People are pseudonymized (teachers by last name, the account owner as 'Me' or the configured label).",
       inputSchema: listThreadsInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     handler(ctx, "itslearning_list_message_threads", async (args: ListThreadsArgs) => {
       const data = await listThreads(ctx, args);
       const unread = data.threads.filter((t) => t.unread).length;
-      return ok(`${data.threads.length} Unterhaltungen${unread ? `, ${unread} ungelesen` : ""}.`, data);
+      return ok(`${data.threads.length} conversations${unread ? `, ${unread} unread` : ""}.`, data);
     }),
   );
 
   server.registerTool(
     "itslearning_get_message_thread",
     {
-      title: "Unterhaltung lesen",
-      description: "Nachrichten einer Unterhaltung in zeitlicher Reihenfolge (älteste zuerst). Texte sind geschwärzt. Ältere Nachrichten über beforeMessageId.",
+      title: "Read conversation",
+      description: "Messages of a conversation in chronological order (oldest first). Texts are redacted. Load older messages via beforeMessageId.",
       inputSchema: getThreadInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     handler(ctx, "itslearning_get_message_thread", async (args: GetThreadArgs) => {
       const data = await getThread(ctx, args);
-      return ok(`${data.messages.length} Nachrichten${data.hasMore ? " (ältere vorhanden)" : ""}.`, data);
+      return ok(`${data.messages.length} messages${data.hasMore ? " (older ones available)" : ""}.`, data);
     }),
   );
 }

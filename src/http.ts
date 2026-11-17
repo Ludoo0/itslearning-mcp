@@ -1,9 +1,9 @@
 /**
- * Streamable-HTTP-Transport (Spec 8.1) auf Basis von Bun.serve + Web-Standard-Transport des SDK.
+ * Streamable HTTP transport (spec 8.1) based on Bun.serve + the SDK's web-standard transport.
  *
- * - POST /mcp  – MCP (zustandslos, JSON-Antworten); Authorization: Bearer <MCP_API_KEY> Pflicht
- * - GET  /healthz – ohne Auth, ohne Details
- * Pro Anfrage ein frischer McpServer über dem gemeinsamen AppContext (Login, Caches, Personen-Registry bleiben erhalten).
+ * - POST /mcp  – MCP (stateless, JSON responses); Authorization: Bearer <MCP_API_KEY> required
+ * - GET  /healthz – no auth, no details
+ * A fresh McpServer per request on top of the shared AppContext (login, caches and person registry persist).
  */
 import { timingSafeEqual } from "node:crypto";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -15,7 +15,7 @@ export type HttpOptions = {
   host: string;
   port: number;
   apiKey: string;
-  /** Erlaubte Browser-Origins (leer = Anfragen mit Origin-Header werden abgelehnt → Schutz vor DNS-Rebinding). */
+  /** Allowed browser origins (empty = requests with an Origin header are rejected → DNS rebinding protection). */
   allowedOrigins?: string[];
   createServer: (ctx: AppContext) => McpServer;
 };
@@ -54,14 +54,14 @@ export function startHttpServer(ctx: AppContext, opts: HttpOptions) {
 
       const origin = req.headers.get("origin");
       if (origin && !allowed.has(origin)) {
-        log.warn("http: Origin abgelehnt");
+        log.warn("http: origin rejected");
         return rpcError(403, "Origin not allowed");
       }
       if (!keyMatches(req.headers.get("authorization"), opts.apiKey)) {
-        log.warn("http: ungültiger oder fehlender API-Key");
+        log.warn("http: invalid or missing API key");
         return rpcError(401, "Unauthorized", { "WWW-Authenticate": 'Bearer realm="itslearning-mcp"' });
       }
-      // Zustandsloser Modus: kein SSE-Stream (GET) und keine Sessions (DELETE)
+      // Stateless mode: no SSE stream (GET) and no sessions (DELETE)
       if (req.method !== "POST") return rpcError(405, "Method not allowed", { Allow: "POST" });
 
       const mcp = opts.createServer(ctx);
@@ -72,10 +72,10 @@ export function startHttpServer(ctx: AppContext, opts: HttpOptions) {
         log.debug("http", { status: res.status, ms: Date.now() - t0 });
         return res;
       } catch (e) {
-        log.error("http: Fehler bei der Verarbeitung", { error: e instanceof Error ? e.message : String(e) });
+        log.error("http: error while handling the request", { error: e instanceof Error ? e.message : String(e) });
         return rpcError(500, "Internal server error");
       } finally {
-        // Antwort ist bei enableJsonResponse vollständig → Server/Transport freigeben
+        // With enableJsonResponse the response is complete → release server/transport
         queueMicrotask(() => {
           mcp.close().catch(() => {});
         });
@@ -83,6 +83,6 @@ export function startHttpServer(ctx: AppContext, opts: HttpOptions) {
     },
   });
 
-  log.info("itslearning-MCP-Server läuft", { transport: "http", host: opts.host, port: server.port });
+  log.info("itslearning MCP server running", { transport: "http", host: opts.host, port: server.port });
   return server;
 }

@@ -24,17 +24,17 @@ export type NewsItem = {
   elementType?: string;
   bulletinId?: number;
   images?: FileRefDto[];
-  /** Bei kind=element: Referenz für itslearning_download_file (falls das Element eine Datei ist). */
+  /** For kind=element: reference for itslearning_download_file (if the element is a file). */
   fileRef?: string;
 };
 
 export const isoDate = z
   .string()
-  .refine((s) => Number.isFinite(Date.parse(s)), "ISO-Datum erwartet, z. B. 2026-11-01 oder 2026-11-01T08:00:00Z");
+  .refine((s) => Number.isFinite(Date.parse(s)), "ISO date expected, e.g. 2026-11-01 or 2026-11-01T08:00:00Z");
 
 export const listNewsInput = {
-  courseId: z.number().int().positive().optional().describe("Nur Neuigkeiten dieses Kurses"),
-  since: isoDate.optional().describe("Nur Neuigkeiten ab diesem Zeitpunkt (ISO-Datum)"),
+  courseId: z.number().int().positive().optional().describe("Only news of this course"),
+  since: isoDate.optional().describe("Only news from this point in time on (ISO date)"),
   limit: z.number().int().min(1).max(100).default(20),
 };
 type ListNewsArgs = { courseId?: number; since?: string; limit?: number };
@@ -93,7 +93,7 @@ export async function listNews(ctx: AppContext, args: ListNewsArgs) {
     }
   }
 
-  // Erst alle Personen registrieren, dann Texte schwärzen
+  // Register all people first, then redact the texts
   for (const n of collected) {
     registerPublishedBy(ctx.redactor.people, n.PublishedBy);
     registerPublishedBy(ctx.redactor.people, n.LightBulletin?.PublishedBy, "teacher-weak");
@@ -107,15 +107,15 @@ export function registerNewsTools(server: McpServer, ctx: AppContext) {
   server.registerTool(
     "itslearning_list_news",
     {
-      title: "Neuigkeiten",
+      title: "News",
       description:
-        "Neuigkeiten-Feed (neueste zuerst): Kurs-Ankündigungen (Bulletins), neue Aufgaben/Ressourcen und andere Ereignisse – optional für einen Kurs und ab einem Datum. Personen sind pseudonymisiert, Lehrkräfte erscheinen als „Frau/Herr Nachname“.",
+        "News feed (newest first): course announcements (bulletins), new tasks/resources and other events – optionally for one course and from a date on. People are pseudonymized; teachers appear by last name.",
       inputSchema: listNewsInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     handler(ctx, "itslearning_list_news", async (args: ListNewsArgs) => {
       const data = await listNews(ctx, args);
-      return ok(`${data.items.length} Neuigkeiten${data.hasMore ? " (weitere vorhanden)" : ""}.`, data);
+      return ok(`${data.items.length} news items${data.hasMore ? " (more available)" : ""}.`, data);
     }),
   );
 }

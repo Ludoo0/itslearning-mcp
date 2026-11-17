@@ -1,20 +1,25 @@
 /**
- * Zentrale Schwärzungs-Pipeline für alle Freitexte (Spec 6.4):
- * HTML → Text, Geheimnis-URLs entfernen, Kontaktdaten, Namens-Wörterbuch, Längenbegrenzung.
- * Das Wörterbuch wird aus der Personen-Registry gebaut und bei Änderungen neu erzeugt.
+ * Central redaction pipeline for all free text (spec 6.4):
+ * HTML → text, remove secret URLs, contact data, name dictionary, length limit.
+ * The dictionary is built from the person registry and rebuilt whenever it changes.
  */
 import type { ApiPerson } from "../api/types";
 import { NameDictionary, redactContacts } from "./freetext";
 import { htmlToText, looksLikeHtml } from "./html";
+import type { Labels } from "./labels";
 import { PersonRegistry } from "./registry";
 import { stripSecretUrls } from "./secrets";
 import { TeacherDirectory } from "./teachers";
 
-export const SELF_DISPLAY = "Ich";
+export type RedactorOptions = {
+  /** Words never replaced as a single name (REDACTION_KEEP_WORDS), lowercase. */
+  keepWords?: ReadonlySet<string>;
+};
 
 export class Redactor {
-  private dict = new NameDictionary();
+  private dict: NameDictionary;
   private dictVersion = -1;
+  private keepWords: ReadonlySet<string>;
 
   constructor(
     readonly people: PersonRegistry = new PersonRegistry({
@@ -22,11 +27,19 @@ export class Redactor {
       baseUrl: "https://example.itslearning.com",
       teachers: new TeacherDirectory(null),
       redactTeachers: false,
-      teacherRoleTitles: ["Lehrer", "Lehrerin", "Lehrkraft", "Teacher"],
+      teacherRoleTitles: ["Teacher", "Staff", "Lehrer", "Lehrerin", "Lehrkraft"],
     }),
-  ) {}
+    opts: RedactorOptions = {},
+  ) {
+    this.keepWords = opts.keepWords ?? new Set();
+    this.dict = this.newDictionary();
+  }
 
-  /** Das eigene Konto wird überall zu "Ich" – der Klarname des Kontoinhabers geht nie raus. */
+  get labels(): Labels {
+    return this.people.labels;
+  }
+
+  /** The account owner becomes "Me" everywhere – the owner's real name never leaves the server. */
   registerSelf(p: ApiPerson) {
     this.people.setSelf(p.PersonId, { firstName: p.FirstName, lastName: p.LastName, fullName: p.FullName });
   }
@@ -35,29 +48,31 @@ export class Redactor {
     return this.people.selfPersonId !== undefined;
   }
 
+  private newDictionary() {
+    return new NameDictionary({ ambiguous: this.labels.ambiguousName, keepWords: this.keepWords });
+  }
+
   get names(): NameDictionary {
     if (this.dictVersion !== this.people.version) {
-      const d = new NameDictionary();
-      const entries = this.people.dictionaryEntries();
-      // Eigenes Konto zuletzt hinzufügen ist egal – Mehrdeutigkeiten werden ohnehin zu "[Name]"
-      for (const e of entries) d.addPerson(e.names, e.display, { withTitles: e.withTitles });
+      const d = this.newDictionary();
+      for (const e of this.people.dictionaryEntries()) d.addPerson(e.names, e.display, { withTitles: e.withTitles });
       this.dict = d;
       this.dictVersion = this.people.version;
     }
     return this.dict;
   }
 
-  /** Freitext (HTML oder Text) schwärzen. */
+  /** Redacts free text (HTML or plain text). */
   text(input: string | null | undefined, maxLen?: number): string {
     if (!input) return "";
-    let s = looksLikeHtml(input) ? htmlToText(input) : input.trim();
-    s = stripSecretUrls(s);
-    s = redactContacts(s);
+    let s = looksLikeHtml(input) ? htmlToText(input, this.labels) : input.trim();
+    s = stripSecretUrls(s, this.labels);
+    s = redactContacts(s, this.labels);
     s = this.names.apply(s);
     return truncate(s, maxLen);
   }
 
-  /** Kurze Texte wie Titel/Kursnamen (kein HTML erwartet, aber sicherheitshalber gleich behandelt). */
+  /** Short texts like titles/course names (no HTML expected, but treated the same for safety). */
   title(input: string | null | undefined): string {
     return this.text(input, 300).replace(/\s*\n\s*/g, " ");
   }

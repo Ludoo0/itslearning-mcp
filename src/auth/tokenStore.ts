@@ -1,9 +1,9 @@
 /**
- * OAuth2-Token-Verwaltung (Spec 4.1/4.2):
- * - Login per Passwort, Refresh 30 s vor Ablauf
- * - rotierender Refresh-Token wird nach jedem Refresh atomar in DATA_DIR/state.json gespeichert
- * - höchstens ein Refresh gleichzeitig
- * - falsches Passwort ist "fatal": kein erneuter Versuch bis zum Neustart (Konto-Sperre vermeiden)
+ * OAuth2 token management (spec 4.1/4.2):
+ * - password login, refresh 30 s before expiry
+ * - the rotating refresh token is stored atomically in DATA_DIR/state.json after every refresh
+ * - at most one refresh at a time
+ * - a wrong password is "fatal": no further attempt until restart (avoid account lockout)
  */
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -44,7 +44,7 @@ export class TokenStore {
     return join(this.cfg.dataDir, "state.json");
   }
 
-  /** Gültiger Access-Token; erneuert bei Bedarf (parallele Aufrufe teilen sich einen Refresh). */
+  /** Valid access token; renewed when needed (concurrent calls share one refresh). */
   async getAccessToken(): Promise<string> {
     if (this.fatalError) throw this.fatalError;
     if (this.access && this.now() < this.access.expiresAt - REFRESH_MARGIN_MS) return this.access.token;
@@ -54,7 +54,7 @@ export class TokenStore {
     return this.pending;
   }
 
-  /** Access-Token verwerfen (z. B. nach 401); der nächste Aufruf erneuert ihn. */
+  /** Discards the access token (e.g. after a 401); the next call renews it. */
   invalidate() {
     this.access = undefined;
   }
@@ -68,8 +68,8 @@ export class TokenStore {
       try {
         return await this.accept(await this.tokenRequest({ grant_type: "refresh_token", refresh_token: this.refreshToken }));
       } catch (e) {
-        if (e instanceof ToolError && e.code === "UPSTREAM_ERROR") throw e; // itslearning down → nicht aufs Passwort ausweichen
-        log.warn("Refresh fehlgeschlagen – Login mit Passwort");
+        if (e instanceof ToolError && e.code === "UPSTREAM_ERROR") throw e; // itslearning down → do not fall back to the password
+        log.warn("Refresh failed – logging in with password");
         this.refreshToken = undefined;
       }
     }
@@ -103,7 +103,7 @@ export class TokenStore {
         body: new URLSearchParams({ client_id: this.cfg.clientId, ...params }),
       });
     } catch {
-      throw new ToolError("UPSTREAM_ERROR", "itslearning ist nicht erreichbar.");
+      throw new ToolError("UPSTREAM_ERROR", "itslearning is not reachable.");
     }
     const text = await res.text();
     if (res.ok) {
@@ -111,31 +111,31 @@ export class TokenStore {
         const json = JSON.parse(text) as TokenResponse;
         if (json.access_token) return json;
       } catch {}
-      throw new ToolError("UPSTREAM_ERROR", "Unerwartete Antwort beim Login.");
+      throw new ToolError("UPSTREAM_ERROR", "Unexpected response during login.");
     }
-    if (res.status >= 500) throw new ToolError("UPSTREAM_ERROR", "itslearning ist nicht erreichbar.", res.status);
+    if (res.status >= 500) throw new ToolError("UPSTREAM_ERROR", "itslearning is not reachable.", res.status);
 
     let code = "";
     try {
       code = String(JSON.parse(text)?.ErrorCode ?? JSON.parse(text)?.error ?? "");
     } catch {}
-    log.warn("Token-Anfrage abgelehnt", { grant: params.grant_type, status: res.status, error: sanitizeErrorText(code || text) });
+    log.warn("Token request rejected", { grant: params.grant_type, status: res.status, error: sanitizeErrorText(code || text) });
 
-    if (params.grant_type === "refresh_token") throw new ToolError("AUTH_FAILED", "Refresh-Token ungültig.", res.status);
+    if (params.grant_type === "refresh_token") throw new ToolError("AUTH_FAILED", "Refresh token invalid.", res.status);
     if (/InvalidUser/i.test(code)) {
-      throw new ToolError("AUTH_FAILED", "Anmeldung fehlgeschlagen: Benutzername oder Passwort falsch.", res.status, true);
+      throw new ToolError("AUTH_FAILED", "Login failed: wrong username or password.", res.status, true);
     }
     if (/customer does not exist|disabled/i.test(code)) {
-      throw new ToolError("AUTH_FAILED", "itslearning-Instanz nicht gefunden oder deaktiviert – ITSL_BASE_URL prüfen.", res.status, true);
+      throw new ToolError("AUTH_FAILED", "itslearning instance not found or disabled – check ITSL_BASE_URL.", res.status, true);
     }
-    throw new ToolError("AUTH_FAILED", "Anmeldung bei itslearning fehlgeschlagen.", res.status, true);
+    throw new ToolError("AUTH_FAILED", "Login to itslearning failed.", res.status, true);
   }
 
   private async loadState(): Promise<State | undefined> {
     try {
       const s = JSON.parse(await readFile(this.statePath, "utf8")) as State;
       if (s.baseUrl !== this.cfg.baseUrl || s.username !== this.cfg.username || !s.refreshToken) {
-        log.info("Gespeicherter Login passt nicht zur Konfiguration – wird ignoriert");
+        log.info("Stored login does not match the configuration – ignoring it");
         return undefined;
       }
       registerSecret(s.refreshToken);
@@ -160,8 +160,8 @@ export class TokenStore {
       await rename(tmp, this.statePath);
       await chmod(this.statePath, 0o600).catch(() => {});
     } catch (e) {
-      // Kein Abbruch: Server funktioniert weiter, nur ohne Persistenz über Neustarts
-      log.error("state.json konnte nicht gespeichert werden", { error: e instanceof Error ? e.message : String(e) });
+      // Not fatal: the server keeps working, just without persistence across restarts
+      log.error("Could not write state.json", { error: e instanceof Error ? e.message : String(e) });
     }
   }
 }

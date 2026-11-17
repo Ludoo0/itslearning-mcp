@@ -24,29 +24,29 @@ export type BulletinDto = {
   commentsCount: number;
 };
 
-/** Bilder eines Bulletins → fileRefs (die tokenisierte URL bleibt im FileService). */
+/** Images of a bulletin → fileRefs (the tokenized URL stays inside the FileService). */
 export function bulletinImages(ctx: AppContext, courseId: number | undefined, b: ApiLightBulletin): FileRefDto[] {
   if (!courseId) return [];
   return (b.AttachedImages ?? []).flatMap((img, index) => {
     if (!img?.OriginalFileUrl) return [];
     const fileRef = formatRef({ kind: "bulletinImage", courseId, bulletinId: b.LightBulletinId, index });
     ctx.files.remember(fileRef, img.OriginalFileUrl);
-    return [{ fileRef, name: `Bild ${index + 1}`, kind: "image" as const }];
+    return [{ fileRef, name: ctx.redactor.labels.imageN(index + 1), kind: "image" as const }];
   });
 }
 
 export const listBulletinsInput = {
-  courseId: z.number().int().positive().describe("courseId aus itslearning_list_courses"),
+  courseId: z.number().int().positive().describe("courseId from itslearning_list_courses"),
   limit: z.number().int().min(1).max(50).default(10),
   offset: z.number().int().min(0).default(0),
-  includeResources: z.boolean().default(true).describe("Angehängte Ressourcen (Titel + elementId) mitladen"),
+  includeResources: z.boolean().default(true).describe("Also load attached resources (title + elementId)"),
 };
 type ListBulletinsArgs = { courseId: number; limit?: number; offset?: number; includeResources?: boolean };
 
 export async function listBulletins(ctx: AppContext, args: ListBulletinsArgs) {
   const limit = args.limit ?? 10;
   const offset = args.offset ?? 0;
-  // itslearning paginiert über PageIndex → Offset auf Seiten der Größe `limit` abbilden
+  // itslearning pages via PageIndex → map the offset onto pages of size `limit`
   const pageIndex = Math.floor(offset / limit);
   const [res] = await Promise.all([ctx.it.courseBulletins(args.courseId, pageIndex, limit), warmCourse(ctx, args.courseId)]);
   const items = res.EntityArray ?? [];
@@ -64,7 +64,7 @@ export async function listBulletins(ctx: AppContext, args: ListBulletinsArgs) {
           fileRef: formatRef({ kind: "element", elementId: e.ElementId }),
         }));
       } catch {
-        log.warn("Bulletin-Ressourcen konnten nicht geladen werden");
+        log.warn("Could not load bulletin resources");
       }
     }
     const link = b.EmbedUrl && isShareableUrl(b.EmbedUrl) ? b.EmbedUrl : undefined;
@@ -89,15 +89,15 @@ export function registerBulletinTools(server: McpServer, ctx: AppContext) {
   server.registerTool(
     "itslearning_list_bulletins",
     {
-      title: "Kurs-Ankündigungen",
+      title: "Course announcements",
       description:
-        "Ankündigungen (Bulletins) eines Kurses, neueste zuerst, mit angehängten Ressourcen (elementId). Externe Links bleiben erhalten, itslearning-interne Links und Personennamen sind geschwärzt.",
+        "Announcements (bulletins) of a course, newest first, with attached resources (elementId/fileRef). External links are kept; itslearning-internal links and person names are redacted.",
       inputSchema: listBulletinsInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     handler(ctx, "itslearning_list_bulletins", async (args: ListBulletinsArgs) => {
       const data = await listBulletins(ctx, args);
-      return ok(`${data.bulletins.length} von ${data.total} Ankündigungen.`, data);
+      return ok(`${data.bulletins.length} of ${data.total} announcements.`, data);
     }),
   );
 }

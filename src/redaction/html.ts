@@ -1,4 +1,5 @@
-/** Einfache HTML → Text/Markdown-Umwandlung für itslearning-Inhalte (Spec 6.4, Schritt 1). */
+/** Simple HTML → text/Markdown conversion for itslearning content (spec 6.4, step 1). */
+import { LABELS, type Labels } from "./labels";
 import { isShareableUrl } from "./secrets";
 
 const ENTITIES: Record<string, string> = {
@@ -38,7 +39,7 @@ export function looksLikeHtml(s: string): boolean {
   return /<\/?[a-z][^>]*>/i.test(s) || /&(#\d+|[a-z]+);/i.test(s);
 }
 
-export function htmlToText(html: string): string {
+export function htmlToText(html: string, labels: Labels = LABELS.en): string {
   let s = html;
   s = s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
   s = s.replace(/<a\b[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href: string, inner: string) => {
@@ -54,7 +55,7 @@ export function htmlToText(html: string): string {
   s = s.replace(/<h([1-6])[^>]*>/gi, (_, n: string) => "\n" + "#".repeat(Number(n)) + " ");
   s = s.replace(/<\/?(strong|b)>/gi, "**");
   s = s.replace(/<\/?(em|i)>/gi, "_");
-  s = s.replace(/<img\b[^>]*>/gi, "[Bild]");
+  s = s.replace(/<img\b[^>]*>/gi, labels.image);
   s = s.replace(/<[^>]+>/g, "");
   s = decodeEntities(s);
   return s

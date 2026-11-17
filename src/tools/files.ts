@@ -15,18 +15,18 @@ import { handler, ok } from "./result";
 const MAX_ITEMS = 300;
 const PAGE_TEXT_LEN = 5_000;
 
-// ---------- Hilfen für andere Tools ----------
+// ---------- Helpers for other tools ----------
 
-/** Dateiname schwärzen (Namen im Dateinamen ersetzen), Endung behalten, unsichere Zeichen entfernen. */
+/** Redacts a file name (names inside are replaced), keeps the extension, removes unsafe characters. */
 export function redactFileName(ctx: AppContext, name: string): string {
   const ext = extensionOf(name);
   const base = ext ? name.slice(0, -(ext.length + 1)) : name;
-  const clean = ctx.redactor.title(base).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").trim() || "Datei";
+  const clean = ctx.redactor.title(base).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").trim() || ctx.redactor.labels.file;
   return ext ? `${clean}.${ext}` : clean;
 }
 
 export function elementFileRef(ctx: AppContext, elementId: number, title: string | null | undefined): FileRefDto {
-  return { fileRef: formatRef({ kind: "element", elementId }), name: ctx.redactor.title(title) || `Element ${elementId}`, kind: "unknown" };
+  return { fileRef: formatRef({ kind: "element", elementId }), name: ctx.redactor.title(title) || ctx.redactor.labels.element(elementId), kind: "unknown" };
 }
 
 // ---------- list_course_files ----------
@@ -45,9 +45,9 @@ export type CourseItemDto = {
 };
 
 export const listCourseFilesInput = {
-  courseId: z.number().int().positive().describe("courseId aus itslearning_list_courses"),
-  folderId: z.number().int().positive().optional().describe("elementId eines Ordners (Standard: Hauptordner des Kurses)"),
-  recursive: z.boolean().default(false).describe("Unterordner mit auflisten"),
+  courseId: z.number().int().positive().describe("courseId from itslearning_list_courses"),
+  folderId: z.number().int().positive().optional().describe("elementId of a folder (default: the course's root folder)"),
+  recursive: z.boolean().default(false).describe("Include subfolders"),
   maxDepth: z.number().int().min(1).max(6).default(3),
 };
 type ListCourseFilesArgs = { courseId: number; folderId?: number; recursive?: boolean; maxDepth?: number };
@@ -92,11 +92,11 @@ export async function listCourseFiles(ctx: AppContext, args: ListCourseFilesArgs
 // ---------- download_file ----------
 
 export const downloadFileInput = {
-  fileRef: z.string().min(3).max(64).describe("fileRef aus einem anderen Tool (Aufgabe, Nachricht, Ankündigung, Kurs-Dateien)"),
+  fileRef: z.string().min(3).max(64).describe("fileRef from another tool (task, message, bulletin, course files)"),
   mode: z
     .enum(["auto", "text", "blob", "both"])
     .default("auto")
-    .describe("auto = Text wenn extrahierbar (PDF, DOCX, Text), Bilder als Bild, sonst Datei · text = nur geschwärzter Text · blob = nur Datei · both"),
+    .describe("auto = text if extractable (PDF, DOCX, text), images as image, otherwise the file · text = redacted text only · blob = file only · both"),
   maxTextChars: z.number().int().min(500).max(200_000).default(50_000),
 };
 type DownloadArgs = { fileRef: string; mode?: "auto" | "text" | "blob" | "both"; maxTextChars?: number };
@@ -104,13 +104,13 @@ type DownloadArgs = { fileRef: string; mode?: "auto" | "text" | "blob" | "both";
 export async function downloadFile(ctx: AppContext, args: DownloadArgs): Promise<CallToolResult> {
   const mode = args.mode ?? "auto";
   const maxText = args.maxTextChars ?? 50_000;
-  await warmForFileRef(ctx, args.fileRef); // Namen aller möglichen Personen im Dokument registrieren
+  await warmForFileRef(ctx, args.fileRef); // register everyone who might appear in the document
   const r = await ctx.files.download(args.fileRef);
 
   if (r.type === "page") {
     const text = ctx.redactor.text(r.html, PAGE_TEXT_LEN);
     const data = { fileRef: r.ref, kind: "page" as const, title: ctx.redactor.title(r.title), text };
-    return ok(`„${data.title}“ ist keine Datei, sondern eine itslearning-Seite (z. B. Link, Notiz oder Test). Seiteninhalt geschwärzt:`, data);
+    return ok(`"${data.title}" is not a file but an itslearning page (e.g. link, note or test). Redacted page content:`, data);
   }
 
   const name = redactFileName(ctx, r.name);
@@ -127,7 +127,7 @@ export async function downloadFile(ctx: AppContext, args: DownloadArgs): Promise
     }
   }
   if (mode === "text" && text === undefined) {
-    throw new ToolError("NOT_A_FILE", `Aus „${name}“ (${r.mimeType}) lässt sich kein Text extrahieren – mode "blob" verwenden.`);
+    throw new ToolError("NOT_A_FILE", `No text can be extracted from "${name}" (${r.mimeType}) – use mode "blob".`);
   }
   const includeBlob = mode === "blob" || mode === "both" || (mode === "auto" && (isImage || text === undefined));
 
@@ -139,7 +139,7 @@ export async function downloadFile(ctx: AppContext, args: DownloadArgs): Promise
       await writeFile(savedTo, r.data);
     } catch (e) {
       savedTo = undefined;
-      log.warn("Datei konnte nicht in DOWNLOAD_DIR gespeichert werden", { error: e instanceof Error ? e.message : String(e) });
+      log.warn("Could not store file in DOWNLOAD_DIR", { error: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -155,18 +155,20 @@ export async function downloadFile(ctx: AppContext, args: DownloadArgs): Promise
     blobIncluded: includeBlob,
     ...(savedTo ? { savedTo } : {}),
   };
+  // Clients like Claude Code only show structuredContent when present → the text must be part of it.
+  const structured = { ...meta, ...(text !== undefined ? { text } : {}) };
 
   const content: CallToolResult["content"] = [
     {
       type: "text",
       text:
-        `Datei „${name}“ (${meta.mimeType}, ${Math.ceil(meta.sizeBytes / 1024)} KB)${r.cached ? " aus dem Cache" : ""}.` +
-        (includeBlob ? " Hinweis: Der Datei-Inhalt selbst ist NICHT geschwärzt." : "") +
-        (savedTo ? ` Gespeichert unter ${savedTo}.` : "") +
+        `File "${name}" (${meta.mimeType}, ${Math.ceil(meta.sizeBytes / 1024)} KB)${r.cached ? " from cache" : ""}.` +
+        (includeBlob ? " Note: the file content itself is NOT redacted." : "") +
+        (savedTo ? ` Saved to ${savedTo}.` : "") +
         `\n\n${JSON.stringify(meta, null, 2)}`,
     },
   ];
-  if (text !== undefined) content.push({ type: "text", text: `--- Inhalt (Text, geschwärzt) ---\n${text}` });
+  if (text !== undefined) content.push({ type: "text", text: `--- Content (text, redacted) ---\n${text}` });
   if (includeBlob) {
     const b64 = Buffer.from(r.data).toString("base64");
     content.push(
@@ -175,32 +177,32 @@ export async function downloadFile(ctx: AppContext, args: DownloadArgs): Promise
         : { type: "resource", resource: { uri: `itslearning-file:${r.ref}`, mimeType: r.mimeType, blob: b64 } },
     );
   }
-  return { content, structuredContent: meta };
+  return { content, structuredContent: structured };
 }
 
 export function registerFileTools(server: McpServer, ctx: AppContext) {
   server.registerTool(
     "itslearning_list_course_files",
     {
-      title: "Kurs-Dateien",
+      title: "Course files",
       description:
-        "Ordner und Elemente (Dateien, Links, Seiten …) eines Kurses, optional rekursiv. Elemente haben eine fileRef für itslearning_download_file.",
+        "Folders and elements (files, links, pages …) of a course, optionally recursive. Elements have a fileRef for itslearning_download_file.",
       inputSchema: listCourseFilesInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     handler(ctx, "itslearning_list_course_files", async (args: ListCourseFilesArgs) => {
       const data = await listCourseFiles(ctx, args);
       const folders = data.items.filter((i) => i.kind === "folder").length;
-      return ok(`${data.total - folders} Elemente, ${folders} Ordner${data.truncated ? " (gekürzt)" : ""}.`, data);
+      return ok(`${data.total - folders} elements, ${folders} folders${data.truncated ? " (truncated)" : ""}.`, data);
     }),
   );
 
   server.registerTool(
     "itslearning_download_file",
     {
-      title: "Datei herunterladen",
+      title: "Download file",
       description:
-        "Lädt eine Datei über ihre fileRef. Standard (mode=auto): PDF/DOCX/Text als geschwärzter Text, Bilder als Bild, andere Formate als Datei. Achtung: Bilder und Dateien (blob) sind inhaltlich NICHT geschwärzt – nur extrahierter Text ist es.",
+        "Downloads a file by its fileRef. Default (mode=auto): PDF/DOCX/text as redacted text (field `text`), images as image, other formats as file. Caution: images and files (blob) are NOT redacted – only extracted text is.",
       inputSchema: downloadFileInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },

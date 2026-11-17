@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LABELS } from "../src/redaction/labels";
 import { Redactor } from "../src/redaction/redactor";
 import { PersonRegistry, type RegistryOptions } from "../src/redaction/registry";
 import { TeacherDirectory } from "../src/redaction/teachers";
@@ -15,42 +16,57 @@ function registry(over: Partial<RegistryOptions> = {}) {
     baseUrl: "https://demo.itslearning.com",
     teachers: new TeacherDirectory(null),
     redactTeachers: false,
-    teacherRoleTitles: ["Lehrer", "Lehrerin"],
+    teacherRoleTitles: ["Teacher", "Lehrer", "Lehrerin"],
     ...over,
   });
 }
 
 describe("PersonRegistry", () => {
-  test("Anzeigen je Rolle", () => {
+  test("display per role (en)", () => {
     const r = registry();
     r.setSelf(SELF.PersonId, { firstName: SELF.FirstName, lastName: SELF.LastName });
-    r.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Lehrerin" });
-    r.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Schüler" });
+    r.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
+    r.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Student" });
     r.register(P_UNKNOWN.PersonId, names(P_UNKNOWN));
 
-    expect(r.resolve(SELF.PersonId)).toEqual({ display: "Ich", role: "self" });
-    expect(r.resolve(P_TEACHER.PersonId)).toEqual({ display: "Lehrkraft Lindqvist", role: "teacher" });
-    expect(r.resolve(P_STUDENT.PersonId).display).toMatch(/^Schüler:in-[0-9A-F]{4}$/);
+    expect(r.resolve(SELF.PersonId)).toEqual({ display: "Me", role: "self" });
+    expect(r.resolve(P_TEACHER.PersonId)).toEqual({ display: "Teacher Lindqvist", role: "teacher" });
+    expect(r.resolve(P_STUDENT.PersonId).display).toMatch(/^Student-[0-9A-F]{4}$/);
     expect(r.resolve(P_UNKNOWN.PersonId).display).toMatch(/^Person-[0-9A-F]{4}$/);
     expect(r.resolve(999).display).toMatch(/^Person-/);
+    expect(r.resolve(undefined)).toEqual({ display: "Unknown", role: "unknown" });
   });
 
-  test("schwaches Lehrkraft-Indiz verliert gegen belastbare Schüler-Rolle", () => {
-    const r = registry();
+  test("display per role (de)", () => {
+    const r = registry({ labels: LABELS.de });
+    r.setSelf(SELF.PersonId, { firstName: SELF.FirstName });
+    r.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Lehrer" });
     r.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Schüler" });
+    expect(r.resolve(SELF.PersonId).display).toBe("Ich");
+    expect(r.resolve(P_TEACHER.PersonId).display).toBe("Lehrkraft Lindqvist");
+    expect(r.resolve(P_STUDENT.PersonId).display).toMatch(/^Schüler:in-[0-9A-F]{4}$/);
+    expect(r.resolve(undefined).display).toBe("Unbekannt");
+  });
+
+  test("a weak teacher hint loses against a reliable student role", () => {
+    const r = registry();
+    r.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Student" });
     r.register(P_STUDENT.PersonId, {}, "teacher-weak");
     expect(r.role(P_STUDENT.PersonId)).toBe("student");
     r.register(P_UNKNOWN.PersonId, names(P_UNKNOWN), "teacher-weak");
     expect(r.role(P_UNKNOWN.PersonId)).toBe("teacher");
   });
 
-  test("REDACT_TEACHERS → Lehrkräfte pseudonymisiert", () => {
+  test("REDACT_TEACHERS → teachers are pseudonymized", () => {
     const r = registry({ redactTeachers: true });
-    r.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Lehrer" });
-    expect(r.resolve(P_TEACHER.PersonId).display).toMatch(/^Lehrkraft-[0-9A-F]{4}$/);
+    r.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
+    expect(r.resolve(P_TEACHER.PersonId).display).toMatch(/^Teacher-[0-9A-F]{4}$/);
+    const de = registry({ redactTeachers: true, labels: LABELS.de });
+    de.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Lehrer" });
+    expect(de.resolve(P_TEACHER.PersonId).display).toMatch(/^Lehrkraft-[0-9A-F]{4}$/);
   });
 
-  test("Pseudonyme: stabil bei gleichem Secret, anders bei anderem", () => {
+  test("pseudonyms: stable with the same secret, different with another one", () => {
     const a = registry().resolve(P_STUDENT.PersonId).display;
     const b = registry().resolve(P_STUDENT.PersonId).display;
     const c = registry({ secret: "t".repeat(32) }).resolve(P_STUDENT.PersonId).display;
@@ -68,53 +84,73 @@ describe("TeacherDirectory (teachers.json)", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  test("legt Lehrkräfte an (ohne PersonId/Vorname), übernimmt Anrede ohne Neustart", async () => {
+  test("adds teachers (without PersonId/first name) and applies the salutation without restart", async () => {
     let now = 0;
     const path = join(dir, "teachers.json");
     const teachers = new TeacherDirectory(path, () => now);
     const r = registry({ teachers });
-    r.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Lehrer" });
+    r.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
 
     const file = JSON.parse(await readFile(path, "utf8"));
     expect(file.teachers).toHaveLength(1);
-    expect(file.teachers[0]).toMatchObject({ lastName: "Lindqvist", anrede: "" });
+    expect(file.teachers[0]).toMatchObject({ lastName: "Lindqvist", salutation: "" });
+    expect(file._hint).toContain("salutation");
     expect(JSON.stringify(file)).not.toMatch(/Sabine|2001/);
-    expect(r.resolve(P_TEACHER.PersonId).display).toBe("Lehrkraft Lindqvist");
+    expect(r.resolve(P_TEACHER.PersonId).display).toBe("Teacher Lindqvist");
 
-    file.teachers[0].anrede = "Frau";
-    await Bun.sleep(20); // mtime muss sich ändern
+    file.teachers[0].salutation = "Mrs";
+    await Bun.sleep(20); // mtime must change
     await writeFile(path, JSON.stringify(file));
     now += 5_000;
-    expect(r.resolve(P_TEACHER.PersonId).display).toBe("Frau Lindqvist");
+    expect(r.resolve(P_TEACHER.PersonId).display).toBe("Mrs Lindqvist");
   });
 
-  test("Lehrkraft bleibt Lehrkraft über Neustarts (Datei als Gedächtnis)", async () => {
+  test("migration: the old field 'anrede' is read and rewritten as 'salutation'", async () => {
     const path = join(dir, "teachers.json");
-    registry({ teachers: new TeacherDirectory(path) }).registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Lehrer" });
+    const key = registry().teacherKey(P_TEACHER.PersonId);
+    await writeFile(path, JSON.stringify({ _hinweis: "old", teachers: [{ id: key, lastName: "Lindqvist", anrede: "Frau" }] }));
+    const r = registry({ teachers: new TeacherDirectory(path), labels: LABELS.de });
+    r.register(P_TEACHER.PersonId, names(P_TEACHER));
+    expect(r.resolve(P_TEACHER.PersonId).display).toBe("Frau Lindqvist");
+    const file = JSON.parse(await readFile(path, "utf8"));
+    expect(file.teachers[0]).toEqual({ id: key, lastName: "Lindqvist", salutation: "Frau" });
+    expect(file._hinweis).toBeUndefined();
+  });
+
+  test("a teacher stays a teacher across restarts (file as memory)", async () => {
+    const path = join(dir, "teachers.json");
+    registry({ teachers: new TeacherDirectory(path) }).registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
     const r2 = registry({ teachers: new TeacherDirectory(path) });
-    r2.register(P_TEACHER.PersonId, names(P_TEACHER)); // ohne Rollen-Hinweis
+    r2.register(P_TEACHER.PersonId, names(P_TEACHER)); // without role hint
     expect(r2.role(P_TEACHER.PersonId)).toBe("teacher");
   });
 
-  test("kaputte Datei wird nicht überschrieben", async () => {
+  test("a broken file is never overwritten", async () => {
     const path = join(dir, "teachers.json");
-    await writeFile(path, "{ kaputt");
+    await writeFile(path, "{ broken");
     const r = registry({ teachers: new TeacherDirectory(path) });
-    r.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Lehrer" });
-    expect(await readFile(path, "utf8")).toBe("{ kaputt");
-    expect(r.resolve(P_TEACHER.PersonId).display).toBe("Lehrkraft Lindqvist");
+    r.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
+    expect(await readFile(path, "utf8")).toBe("{ broken");
+    expect(r.resolve(P_TEACHER.PersonId).display).toBe("Teacher Lindqvist");
   });
 });
 
-describe("Redactor + Registry", () => {
-  test("Freitext: Lehrkraft mit Anrede-Varianten, Schüler:in pseudonymisiert, Wörterbuch aktualisiert sich", () => {
+describe("Redactor + registry", () => {
+  test("free text: teacher with salutation variants, student pseudonymized, dictionary updates itself", () => {
     const red = new Redactor(registry());
     red.registerSelf(SELF);
-    expect(red.text("Sabine Lindqvist und Mia Sonnenfeld")).toBe("Sabine Lindqvist und Mia Sonnenfeld"); // noch nicht registriert
-    red.people.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Lehrer" });
-    red.people.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Schüler" });
-    const out = red.text("Sabine Lindqvist sagt: Frau Lindqvist, Herr Lindqvist, Mia und Sonnenfeld, Jonas!");
+    expect(red.text("Sabine Lindqvist and Mia Sonnenfeld")).toBe("Sabine Lindqvist and Mia Sonnenfeld"); // not registered yet
+    red.people.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
+    red.people.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Student" });
+    const out = red.text("Sabine Lindqvist says: Mrs Lindqvist, Frau Lindqvist, Mia and Sonnenfeld, Jonas!");
     const mia = red.people.resolve(P_STUDENT.PersonId).display;
-    expect(out).toBe(`Lehrkraft Lindqvist sagt: Lehrkraft Lindqvist, Lehrkraft Lindqvist, ${mia} und ${mia}, Ich!`);
+    expect(out).toBe(`Teacher Lindqvist says: Teacher Lindqvist, Teacher Lindqvist, ${mia} and ${mia}, Me!`);
+  });
+
+  test("German labels end to end", () => {
+    const red = new Redactor(registry({ labels: LABELS.de }));
+    red.registerSelf(SELF);
+    red.people.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Lehrer" });
+    expect(red.text("Hallo Jonas, Frau Lindqvist: a@b.example")).toBe("Hallo Ich, Lehrkraft Lindqvist: [E-Mail]");
   });
 });

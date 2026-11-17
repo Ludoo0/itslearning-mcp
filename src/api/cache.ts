@@ -1,4 +1,4 @@
-/** Kleiner TTL-Cache, der auch laufende Anfragen teilt (gleicher Schlüssel → ein Request). */
+/** Small TTL cache that also shares in-flight requests (same key → one request). */
 export class TtlCache {
   private entries = new Map<string, { expiresAt: number; value: Promise<unknown> }>();
 
@@ -10,7 +10,7 @@ export class TtlCache {
     if (hit && hit.expiresAt > this.now()) return hit.value as Promise<T>;
     const value = load();
     this.entries.set(key, { expiresAt: this.now() + ttlMs, value });
-    value.catch(() => this.entries.delete(key)); // Fehler nicht cachen
+    value.catch(() => this.entries.delete(key)); // never cache errors
     if (this.entries.size > 500) this.prune();
     return value;
   }

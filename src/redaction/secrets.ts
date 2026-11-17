@@ -1,7 +1,8 @@
 /**
- * Erkennen und Entfernen von Geheimnissen und itslearning-internen URLs.
- * Siehe docs/mcp-server-spec.md, Abschnitt 6.5.
+ * Detection and removal of secrets and itslearning-internal URLs.
+ * See docs/mcp-server-spec.md, section 6.5.
  */
+import { LABELS, type Labels } from "./labels";
 
 const ITSL_HOST_RE = /(^|\.)itslearning\.com$/i;
 const SECRET_PARAM_RE = /^(token|signature|hash|sign|apisessionid|guid|access_token|refresh_token|password|username|email|firstname|lastname|personid|userid)$/i;
@@ -27,8 +28,8 @@ function safeDecode(s: string) {
 }
 
 /**
- * Geheime Parameter-NAMEN oder verdächtige WERTE: JSON/Markup, Personen-IDs, ungewöhnlich lange Werte
- * (z. B. Startparameter externer Lern-Tools: ?data=%7B%22PersonId%22%3A…%7D).
+ * Secret parameter NAMES or suspicious VALUES: JSON/markup, person ids, unusually long values
+ * (e.g. launch parameters of external learning tools: ?data=%7B%22PersonId%22%3A…%7D).
  */
 function hasSecretParams(u: URL): boolean {
   for (const [k, v] of u.searchParams) {
@@ -40,8 +41,8 @@ function hasSecretParams(u: URL): boolean {
 }
 
 /**
- * Darf diese URL an einen Agenten gehen?
- * Erlaubt: externe http(s)-Links ohne geheime/verdächtige Query-Parameter. Verboten: alles von *.itslearning.com.
+ * May this URL be passed to an agent?
+ * Allowed: external http(s) links without secret/suspicious query parameters. Never: anything on *.itslearning.com.
  */
 export function isShareableUrl(url: string): boolean {
   let u: URL;
@@ -56,29 +57,32 @@ export function isShareableUrl(url: string): boolean {
   return !hasSecretParams(u);
 }
 
-/** Relative itslearning-Links in Texten, z. B. "/Person/show_person.aspx?PersonId=123". */
+/** Relative itslearning links in text, e.g. "/Person/show_person.aspx?PersonId=123". */
 const RELATIVE_ITSL_PATH_RE = /(?<![\w/.:-])\/?(?:[\w.-]+\/)*[\w.-]+\.(?:aspx|ashx|asmx)(?:\?[^\s<>"'`)\]]*)?/gi;
-/** Interne IDs als Schlüssel/Wert, z. B. "PersonId=123", "personid: 123", "\"PersonId\":123". */
+/** Internal ids as key/value pairs, e.g. "PersonId=123", "personid: 123", "\"PersonId\":123". */
 const ID_PAIR_RE = /["']?\b(?:Person|User|Customer|Child|Student|Member)_?Id["']?\s*[=:]\s*["']?\d+["']?/gi;
 
 /**
- * URL-kodierte Daten-Blobs (z. B. Startparameter eingebetteter Lern-Tools: "%22PersonId%22%3A123…").
- * Für Agenten wertlos und potenziell heikel – darin kodierte Namen (%C3%BC …) erkennt das Wörterbuch nicht.
+ * URL-encoded data blobs (e.g. launch parameters of embedded learning tools: "%22PersonId%22%3A123…").
+ * Useless for agents and potentially sensitive – names encoded inside (%C3%BC …) are invisible to the name dictionary.
  */
 const ENCODED_BLOB_RE = /[^\s<>"']*(?:%[0-9a-f]{2}[^\s<>"'%]*){3,}/gi;
 
-/** Ersetzt nicht teilbare URLs (absolut und relativ), kodierte Daten-Blobs sowie interne ID-Angaben. Externe, unkritische Links bleiben stehen. */
-export function stripSecretUrls(text: string): string {
+/**
+ * Replaces non-shareable URLs (absolute and relative), encoded data blobs and internal id pairs.
+ * External, harmless links are kept.
+ */
+export function stripSecretUrls(text: string, labels: Labels = LABELS.en): string {
   return text
-    .replace(ENCODED_BLOB_RE, (raw) => (isShareableUrl(raw) ? raw : "[kodierte Daten entfernt]"))
+    .replace(ENCODED_BLOB_RE, (raw) => (isShareableUrl(raw) ? raw : labels.encodedData))
     .replace(URL_IN_TEXT_RE, (raw) => {
       const url = raw.replace(/[.,;:!?]+$/, "");
       const tail = raw.slice(url.length);
       if (isShareableUrl(url)) return raw;
-      return (isItslearningUrl(url) ? "[itslearning-Link]" : "[Link entfernt]") + tail;
+      return (isItslearningUrl(url) ? labels.itslearningLink : labels.linkRemoved) + tail;
     })
-    .replace(RELATIVE_ITSL_PATH_RE, (raw) => "[itslearning-Link]" + (raw.match(/[.,;:!?]+$/)?.[0] ?? ""))
-    .replace(ID_PAIR_RE, "[ID]");
+    .replace(RELATIVE_ITSL_PATH_RE, (raw) => labels.itslearningLink + (raw.match(/[.,;:!?]+$/)?.[0] ?? ""))
+    .replace(ID_PAIR_RE, labels.idPair);
 }
 
 function redactSegment(seg: string): string {
@@ -96,7 +100,7 @@ function redactSegment(seg: string): string {
   return s;
 }
 
-/** URL-Muster für Logs: IDs, Tokens, Dateinamen und alle Query-Werte ersetzt; externe URLs komplett. */
+/** URL pattern for logs: ids, tokens, file names and all query values replaced; external URLs entirely. */
 export function redactUrlForLog(raw: string, base?: string): string {
   let u: URL;
   try {
@@ -111,9 +115,9 @@ export function redactUrlForLog(raw: string, base?: string): string {
   return `${u.protocol}//${u.host}${path}${qs}`;
 }
 
-/** Bereinigt Fehlertexte der API für Logs (dort stehen z. B. PersonId/CustomerId drin). */
+/** Cleans API error texts for logs (they contain e.g. PersonId/CustomerId). */
 export function sanitizeErrorText(text: string): string {
-  if (/<html|<!DOCTYPE/i.test(text)) return "HTML-Fehlerseite";
+  if (/<html|<!DOCTYPE/i.test(text)) return "HTML error page";
   return text
     .replace(URL_IN_TEXT_RE, (u) => redactUrlForLog(u))
     .replace(/\d+/g, "{n}")
