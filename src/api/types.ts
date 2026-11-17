@@ -176,6 +176,8 @@ export type ApiResource = {
   Homework?: boolean;
   Path?: string | null;
   LearningToolId?: number | null;
+  /** Icon URL; its ExtensionId query parameter identifies the element type (see scripts/dev/element-types.ts). */
+  IconUrl?: string | null;
   LearningObjectId?: number | null;
   LearningObjectInstanceId?: number | null;
   IsTopicOrPlanFolder?: boolean;

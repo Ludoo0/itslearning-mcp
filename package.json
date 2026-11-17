@@ -36,7 +36,8 @@
     "smoke": "bun run scripts/smoke.ts",
     "check": "bun run src/check/cli.ts",
     "lint": "biome ci .",
-    "format": "biome check --write ."
+    "format": "biome check --write .",
+    "element-types": "bun run scripts/dev/element-types.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

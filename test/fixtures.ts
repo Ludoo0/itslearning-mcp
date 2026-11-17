@@ -375,11 +375,12 @@ export const RESOURCES: Record<number, ApiResource> = {
     ElementId: 7201,
     Title: "Worksheet week 1",
     ElementType: "LearningToolElement",
+    LearningToolId: 5009,
     CourseId: 11,
     ContentUrl: VIEW(7201),
     Homework: true,
   },
-  7202: { ElementId: 7202, Title: "Note", ElementType: "LearningToolElement", CourseId: 11, ContentUrl: VIEW(7202) },
+  7202: { ElementId: 7202, Title: "Note", ElementType: "LearningToolElement", LearningToolId: 5010, CourseId: 11, ContentUrl: VIEW(7202) },
   7203: {
     ElementId: 7203,
     Title: "Solutions",
