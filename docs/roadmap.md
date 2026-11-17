@@ -7,7 +7,9 @@ Open items after v0.2.0. Background: [`mcp-server-spec.md`](./mcp-server-spec.md
 ## Next (v0.3)
 
 ### Element type mapping (`LearningToolId`)
-`itslearning_list_course_files` cannot tell files, links, pages and tests apart up front – all non-folders are `LearningToolElement`; only `LearningToolId` (or the `ExtensionId` in `IconUrl`) distinguishes them. Collect the mapping from real instances and expose a `kind` such as `file` / `link` / `page` / `test`. `bun run element-types` (`scripts/dev/element-types.ts`) lists the `LearningToolId` / `ExtensionId` combinations of an account with counts and file extensions from titles only – its output can be shared.
+`itslearning_list_course_files` cannot tell files, links, pages and tests apart up front – all non-folders are `LearningToolElement`; only `LearningToolId` (or the `ExtensionId` in `IconUrl`) distinguishes them. `bun run element-types` (`scripts/dev/element-types.ts`) lists the `LearningToolId` / `ExtensionId` combinations of an account with counts and file extensions from titles only – its output can be shared.
+
+Done: `5009` is mapped to `kind: "file"` (reference instance: ~92 % of all course elements, titles almost all `.pdf`/images/`.mp4`); `CustomActivity` → `activity`. Still open: further ids observed at the reference instance without file extensions – `5010` (12×), `5006` (9×, titles with years/numbers), `5050` (3×), `5` (4×), `5002` (1×) – and `5017` (2×, titles `.docx`, possibly a cloud/Office document). Check what they are in the web interface (e.g. via `itslearning_download_file`, which reports `kind: "page"` for non-files) and extend `FILE_TOOL_IDS` / add `link` / `page` / `test` kinds in `src/tools/files.ts`.
 
 ### Faster course-file downloads
 The download chain needs about 8 requests per file. `LearningObjectId` and `LearningObjectInstanceId` from the resources API match the parameters of `Proxy/DownloadRedirect.ashx`. Once a `resource.itslearning.com` session exists, calling `DownloadRedirect.ashx` directly could save ~6 requests per file. Needs verification.

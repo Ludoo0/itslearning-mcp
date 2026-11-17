@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - The expected `403`/`404` of the assignment API for task types it does not describe is logged at debug level instead of as a warning (`itslearning_get_task` falls back to the task page; a failing fallback still logs a warning).
+- `itslearning_list_course_files`: `kind` is now `file` (verified file elements, `LearningToolId` 5009), `activity`, `folder` or `other` instead of the generic `element`; elements expose their `learningToolId`. Other ids (links, pages, tests, …) are not mapped yet.
+- New developer script `bun run element-types` to collect `LearningToolId` / `ExtensionId` combinations of an account (counts and file extensions only).
 
 ## [0.2.0] - 2026-11-18
 

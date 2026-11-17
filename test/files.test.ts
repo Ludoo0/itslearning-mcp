@@ -10,7 +10,7 @@ import { ToolError } from "../src/errors";
 import { FileCache } from "../src/files/cache";
 import { extractText } from "../src/files/extract";
 import { formatRef, parseRef } from "../src/files/refs";
-import { downloadFile, listCourseFiles } from "../src/tools/files";
+import { downloadFile, elementKind, listCourseFiles } from "../src/tools/files";
 import { getThread } from "../src/tools/messages";
 import { extractLinks, filenameFromDisposition, readLimited } from "../src/websession/browser";
 import { createFakeWeb, makePdf, SECRET_MARKERS } from "./fakeWeb";
@@ -79,8 +79,8 @@ describe("itslearning_list_course_files", () => {
     const res = await listCourseFiles(await fakeContext(), { courseId: 11 });
     expect(res.items.map((i) => [i.elementId, i.kind, i.fileRef])).toEqual([
       [7300, "folder", undefined],
-      [7201, "element", "e_7201"],
-      [7202, "element", "e_7202"],
+      [7201, "file", "e_7201"],
+      [7202, "other", "e_7202"],
     ]);
   });
 
@@ -285,5 +285,21 @@ describe("Leak test for files via the MCP protocol", () => {
     for (const m of SECRET_MARKERS) expect(all, `secret "${m}"`).not.toContain(m);
     expect(all).not.toMatch(/filerepository|filecache|LoginSSO|ProcessLogin|MobileAppLoginSso|DownloadRedirect|itslearning\.com\//);
     for (const n of FORBIDDEN_NAMES) expect(all, `name "${n}"`).not.toMatch(new RegExp(`\\b${n}\\b`));
+  });
+});
+
+describe("element kind mapping", () => {
+  test("verified file id → file, CustomActivity → activity, folders, everything else → other", () => {
+    expect(elementKind({ ElementId: 1, ElementType: "LearningToolElement", LearningToolId: 5009 })).toBe("file");
+    expect(elementKind({ ElementId: 2, ElementType: "LearningToolElement", LearningToolId: 5010 })).toBe("other");
+    expect(elementKind({ ElementId: 3, ElementType: "LearningToolElement" })).toBe("other");
+    expect(elementKind({ ElementId: 4, ElementType: "CustomActivity", LearningToolId: 0 })).toBe("activity");
+    expect(elementKind({ ElementId: 5, ElementType: "Folder" })).toBe("folder");
+  });
+
+  test("list_course_files exposes learningToolId for elements", async () => {
+    const res = await listCourseFiles(await fakeContext(), { courseId: 11 });
+    expect(res.items.find((i) => i.elementId === 7201)).toMatchObject({ kind: "file", learningToolId: 5009 });
+    expect(res.items.find((i) => i.elementId === 7300)?.learningToolId).toBeUndefined();
   });
 });

@@ -43,8 +43,11 @@ export function elementFileRef(ctx: AppContext, elementId: number, title: string
 export type CourseItemDto = {
   elementId: number;
   title: string;
-  kind: "folder" | "element";
+  /** file = verified file element; other = link, page, test, … (not distinguished yet) */
+  kind: "folder" | "file" | "activity" | "other";
   elementType: string;
+  /** itslearning extension id of a LearningToolElement (helps to tell element types apart) */
+  learningToolId?: number;
   path?: string;
   depth: number;
   parentFolderId?: number;
@@ -62,6 +65,20 @@ export const listCourseFilesInput = {
 type ListCourseFilesArgs = { courseId: number; folderId?: number; recursive?: boolean; maxDepth?: number };
 
 const isFolder = (r: ApiResource) => /folder/i.test(r.ElementType ?? "");
+
+/**
+ * LearningToolIds verified as files against a real instance (scripts/dev/element-types.ts: ~92 % of
+ * course elements, titles almost all .pdf/.jpg/.png/.mp4). Other ids (links, pages, tests, …) are not
+ * mapped yet and reported as "other" – see docs/roadmap.md.
+ */
+const FILE_TOOL_IDS = new Set([5009]);
+
+export function elementKind(r: ApiResource): CourseItemDto["kind"] {
+  if (isFolder(r)) return "folder";
+  if (/CustomActivity/i.test(r.ElementType ?? "")) return "activity";
+  if (typeof r.LearningToolId === "number" && FILE_TOOL_IDS.has(r.LearningToolId)) return "file";
+  return "other";
+}
 
 export async function listCourseFiles(ctx: AppContext, args: ListCourseFilesArgs) {
   const maxDepth = args.recursive ? (args.maxDepth ?? 3) : 1;
@@ -83,8 +100,9 @@ export async function listCourseFiles(ctx: AppContext, args: ListCourseFilesArgs
       items.push({
         elementId: r.ElementId,
         title: ctx.redactor.title(r.Title),
-        kind: folder ? "folder" : "element",
+        kind: elementKind(r),
         elementType: r.ElementType ?? "Unknown",
+        ...(!folder && typeof r.LearningToolId === "number" && r.LearningToolId > 0 ? { learningToolId: r.LearningToolId } : {}),
         ...(r.Path ? { path: ctx.redactor.title(r.Path) } : {}),
         depth,
         ...(folderId !== undefined ? { parentFolderId: folderId } : {}),
@@ -198,7 +216,7 @@ export function registerFileTools(server: McpServer, ctx: AppContext) {
     {
       title: "Course files",
       description:
-        "Folders and elements (files, links, pages …) of a course, optionally recursive. Elements have a fileRef for itslearning_download_file.",
+        'Folders and elements of a course, optionally recursive. `kind` is "file" for file elements, "activity", "folder", or "other" (links, pages, tests … – not distinguished yet; itslearning_download_file tells, returning kind "page" for non-files). Elements have a fileRef for itslearning_download_file.',
       inputSchema: listCourseFilesInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
