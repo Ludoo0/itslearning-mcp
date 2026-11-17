@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an improvement or a new read-only tool
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This server is intentionally **read-only** and **privacy-first**. Write operations (sending messages, submitting assignments) are out of scope.
+        Please do not include real data from an itslearning account.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like an agent to be able to do?
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: Relevant itslearning endpoints (if known)
+      description: The public API help page is at `https://<your-instance>.itslearning.com/restapi/help`.

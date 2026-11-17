@@ -1,8 +1,32 @@
 {
   "name": "itslearning-mcp",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Read-only MCP server for itslearning with redaction of personal data",
+  "license": "MIT",
+  "author": "Ludo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ludoo0/itslearning-mcp.git"
+  },
+  "homepage": "https://github.com/Ludoo0/itslearning-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/Ludoo0/itslearning-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "itslearning",
+    "lms",
+    "school",
+    "privacy",
+    "redaction",
+    "bun"
+  ],
   "private": true,
   "type": "module",
+  "engines": {
+    "bun": ">=1.4"
+  },
   "scripts": {
     "start": "bun run src/server.ts",
     "test": "bun test",
@@ -12,14 +36,14 @@
     "probe2": "bun run scripts/probe2.ts",
     "smoke": "bun run scripts/smoke.ts"
   },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.9.0"
-  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "mammoth": "^1.13.0",
     "unpdf": "^2.2.1",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
   }
 }
