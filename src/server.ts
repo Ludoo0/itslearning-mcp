@@ -5,12 +5,12 @@
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createApp, createServer } from "./app";
-import { ConfigError, loadConfig } from "./config";
+import { type Config, ConfigError, loadConfig } from "./config";
 import { startHttpServer } from "./http";
 import { log, setLogLevel } from "./log";
 
 async function main() {
-  let cfg;
+  let cfg: Config;
   try {
     cfg = loadConfig();
   } catch (e) {

@@ -40,10 +40,15 @@ export function createFakeWeb(): FakeWeb {
   const stats = { requests: [] as string[], loginPagesServed: 0 };
   let expireNext = false;
   const html = (body: string, headers: Record<string, string> = {}) =>
-    new Response(`<!DOCTYPE html><html><body>${body}</body></html>`, { headers: { "content-type": "text/html; charset=utf-8", ...headers } });
-  const redirect = (to: string, headers: Record<string, string> = {}) => new Response(null, { status: 302, headers: { location: to, ...headers } });
+    new Response(`<!DOCTYPE html><html><body>${body}</body></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8", ...headers },
+    });
+  const redirect = (to: string, headers: Record<string, string> = {}) =>
+    new Response(null, { status: 302, headers: { location: to, ...headers } });
   const file = (data: Uint8Array | string, type: string, disposition?: string) =>
-    new Response(data as unknown as BodyInit, { headers: { "content-type": type, ...(disposition ? { "content-disposition": disposition } : {}) } });
+    new Response(data as unknown as BodyInit, {
+      headers: { "content-type": type, ...(disposition ? { "content-disposition": disposition } : {}) },
+    });
 
   const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -66,12 +71,16 @@ export function createFakeWeb(): FakeWeb {
         }
         const id = url.searchParams.get("LearningToolElementId");
         if (id === "7202") return html("<h1>Note</h1><p>Hello Mia Sonnenfeld, see https://demo.itslearning.com/x?Token=FILETOKEN</p>");
-        return html(`<iframe src="https://platform.itslearning.com/LoginSSO.aspx?FirstName=Jonas&amp;ElementId=${id}&amp;Signature=SIG-SECRET"></iframe>`);
+        return html(
+          `<iframe src="https://platform.itslearning.com/LoginSSO.aspx?FirstName=Jonas&amp;ElementId=${id}&amp;Signature=SIG-SECRET"></iframe>`,
+        );
       }
     }
     // --- platform / resource server ---
     if (url.host === "platform.itslearning.com" && url.pathname === "/LoginSSO.aspx") {
-      return redirect(`https://resource.itslearning.com/File/View.aspx?ElementId=${url.searchParams.get("ElementId")}`, { "set-cookie": "res=1; path=/" });
+      return redirect(`https://resource.itslearning.com/File/View.aspx?ElementId=${url.searchParams.get("ElementId")}`, {
+        "set-cookie": "res=1; path=/",
+      });
     }
     if (url.host === "resource.itslearning.com") {
       if (url.pathname === "/File/View.aspx") {
@@ -79,7 +88,8 @@ export function createFakeWeb(): FakeWeb {
           '<img src="/App_Themes/Default/images/file.gif"><a href="/Proxy/DownloadRedirect.ashx?LearningObjectId=1&amp;LearningObjectInstanceId=2">Download</a>',
         );
       }
-      if (url.pathname === "/Proxy/DownloadRedirect.ashx") return redirect("https://filerepository.itslearning.com/f1?Token=FILETOKEN&Download=1");
+      if (url.pathname === "/Proxy/DownloadRedirect.ashx")
+        return redirect("https://filerepository.itslearning.com/f1?Token=FILETOKEN&Download=1");
     }
     // --- file storage ---
     if (url.host === "filerepository.itslearning.com") {
@@ -88,7 +98,11 @@ export function createFakeWeb(): FakeWeb {
       if (url.pathname === "/def" && token === "ATTSECRET") return redirect("https://filecache.itslearning.com/c/def?sign=S3CR3T");
       if (url.pathname === "/abc" && token === "IMGSECRET") return file(PNG, "image/png", "inline");
       if (url.pathname === "/asg1" && token === "ASGSECRET") {
-        return file("Task from Sabine Lindqvist for Jonas Beispielmann", "application/octet-stream", "attachment; filename*=UTF-8''Caf%C3%A9_Jonas.txt");
+        return file(
+          "Task from Sabine Lindqvist for Jonas Beispielmann",
+          "application/octet-stream",
+          "attachment; filename*=UTF-8''Caf%C3%A9_Jonas.txt",
+        );
       }
       return new Response("nope", { status: 403 });
     }
@@ -101,7 +115,11 @@ export function createFakeWeb(): FakeWeb {
         );
       }
       if (url.pathname === "/c/def") {
-        return file(makePdf("Notes by Jonas Beispielmann and Mia Sonnenfeld"), "application/pdf", 'attachment; filename="Notes_Jonas_Beispielmann.pdf"');
+        return file(
+          makePdf("Notes by Jonas Beispielmann and Mia Sonnenfeld"),
+          "application/pdf",
+          'attachment; filename="Notes_Jonas_Beispielmann.pdf"',
+        );
       }
     }
     return new Response("not found", { status: 404 });

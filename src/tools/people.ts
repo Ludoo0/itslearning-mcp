@@ -37,7 +37,10 @@ const warmed = new WeakMap<AppContext, Map<number, Promise<void>>>();
 export function warmCourse(ctx: AppContext, courseId: number | null | undefined): Promise<void> {
   if (!courseId) return Promise.resolve();
   let map = warmed.get(ctx);
-  if (!map) warmed.set(ctx, (map = new Map()));
+  if (!map) {
+    map = new Map();
+    warmed.set(ctx, map);
+  }
   let p = map.get(courseId);
   if (!p) {
     p = ctx.it

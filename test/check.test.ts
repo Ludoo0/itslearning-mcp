@@ -22,7 +22,8 @@ function fakeInstance(s: Scenario = {}) {
   const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     requests.push(`${init?.method ?? "GET"} ${url.pathname}`);
-    const authed = new Headers(init?.headers).get("authorization") === "Bearer A2" || new Headers(init?.headers).get("authorization") === "Bearer A1";
+    const authed =
+      new Headers(init?.headers).get("authorization") === "Bearer A2" || new Headers(init?.headers).get("authorization") === "Bearer A1";
 
     if (url.pathname === "/") {
       const sp = s.startPage ?? { status: 200, body: NATIVE_PAGE };
@@ -39,25 +40,43 @@ function fakeInstance(s: Scenario = {}) {
         return Response.json(e.body, { status: e.status });
       }
       if (p.get("grant_type") === "refresh_token") {
-        return s.refreshWorks === false ? Response.json({ error: "invalid_grant" }, { status: 400 }) : Response.json({ access_token: "A2", refresh_token: "R2", expires_in: 300 });
+        return s.refreshWorks === false
+          ? Response.json({ error: "invalid_grant" }, { status: 400 })
+          : Response.json({ access_token: "A2", refresh_token: "R2", expires_in: 300 });
       }
     }
     if (url.pathname === "/restapi/personal/person/v1") {
       if (!authed) return new Response("", { status: s.personWithoutToken ?? 401 });
-      return Response.json({ PersonId: 1, FirstName: "Testina", LastName: "Fakeperson", Children: s.children ?? [], CanAccessCourses: true });
+      return Response.json({
+        PersonId: 1,
+        FirstName: "Testina",
+        LastName: "Fakeperson",
+        Children: s.children ?? [],
+        CanAccessCourses: true,
+      });
     }
     if (!authed) return new Response("", { status: 401 });
     if (url.pathname === "/restapi/personal/courses/v1") return paged([{ CourseId: 11 }, { CourseId: 12 }]);
     if (url.pathname === "/restapi/personal/tasks/v1") return paged([{ TaskId: 1 }]);
     if (url.pathname === "/restapi/personal/notifications/stream/v2") return paged([]);
-    if (url.pathname === "/restapi/personal/instantmessages/messagethreads/v4") return Response.json({ Threads: { EntityArray: [{}, {}], Total: 0 }, HasMore: false });
+    if (url.pathname === "/restapi/personal/instantmessages/messagethreads/v4")
+      return Response.json({ Threads: { EntityArray: [{}, {}], Total: 0 }, HasMore: false });
     if (url.pathname === "/restapi/personal/courses/11/resources/v1") {
-      return Response.json({ Resources: { EntityArray: [{ ElementType: "Folder" }, { ElementType: "LearningToolElement", ContentUrl: "https://demo.itslearning.com/x" }] } });
+      return Response.json({
+        Resources: {
+          EntityArray: [{ ElementType: "Folder" }, { ElementType: "LearningToolElement", ContentUrl: "https://demo.itslearning.com/x" }],
+        },
+      });
     }
     if (url.pathname === "/restapi/personal/courses/11/participants/v1") {
-      return s.participantsStatus ? new Response("", { status: s.participantsStatus }) : paged([{ PersonId: 1 }, { PersonId: 2 }, { PersonId: 3 }]);
+      return s.participantsStatus
+        ? new Response("", { status: s.participantsStatus })
+        : paged([{ PersonId: 1 }, { PersonId: 2 }, { PersonId: 3 }]);
     }
-    if (url.pathname === "/restapi/personal/sso/url/v1") return s.ssoUrl === false ? new Response("", { status: 403 }) : Response.json({ Url: "https://demo.itslearning.com/sso?Signature=x" });
+    if (url.pathname === "/restapi/personal/sso/url/v1")
+      return s.ssoUrl === false
+        ? new Response("", { status: 403 })
+        : Response.json({ Url: "https://demo.itslearning.com/sso?Signature=x" });
     return new Response("not found", { status: 404 });
   }) as unknown as typeof fetch;
   return { fetchImpl, requests };
@@ -123,7 +142,20 @@ describe("compatibility check – with credentials", () => {
     expect(r.loginTested).toBe(true);
     expect(r.verdict).toBe("compatible");
     expect(r.results.map((x) => x.id)).toEqual([
-      "reachable", "login-mode", "rest-api", "oauth", "login", "refresh", "account", "courses", "tasks", "news", "messages", "course-files", "participants", "downloads",
+      "reachable",
+      "login-mode",
+      "rest-api",
+      "oauth",
+      "login",
+      "refresh",
+      "account",
+      "courses",
+      "tasks",
+      "news",
+      "messages",
+      "course-files",
+      "participants",
+      "downloads",
     ]);
     expect(r.results.find((x) => x.id === "participants")?.detail).toBe("3 participant(s) readable");
     expect(JSON.stringify(r.results)).not.toMatch(/Testina|Fakeperson|fake.user|pw-xyz|Signature/);
@@ -153,7 +185,10 @@ describe("compatibility check – with credentials", () => {
   });
 
   test("parent account, no participants, no SSO URL, refresh broken → partial with warnings", async () => {
-    const r = await check({ validLogin: creds, children: [{}], participantsStatus: 403, ssoUrl: false, refreshWorks: false }, { credentials: creds });
+    const r = await check(
+      { validLogin: creds, children: [{}], participantsStatus: 403, ssoUrl: false, refreshWorks: false },
+      { credentials: creds },
+    );
     expect(statusOf(r, "account")).toBe("warn");
     expect(statusOf(r, "participants")).toBe("warn");
     expect(statusOf(r, "downloads")).toBe("warn");

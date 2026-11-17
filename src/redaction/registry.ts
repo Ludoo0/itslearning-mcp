@@ -98,7 +98,11 @@ export class PersonRegistry {
 
   /** Message thread participant: role from RoleInHierarchyTitle. */
   registerParticipant(p: ApiParticipant) {
-    this.register(p.PersonId, { firstName: p.FirstName, lastName: p.LastName, fullName: p.FullName }, this.hintFromTitle(p.RoleInHierarchyTitle));
+    this.register(
+      p.PersonId,
+      { firstName: p.FirstName, lastName: p.LastName, fullName: p.FullName },
+      this.hintFromTitle(p.RoleInHierarchyTitle),
+    );
   }
 
   /** Course participant: only FullName + role (course profile) → split first/last name heuristically. */

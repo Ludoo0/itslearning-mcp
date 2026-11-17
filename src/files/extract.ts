@@ -37,12 +37,7 @@ export function resolveMimeType(header: string | null, name: string): string {
 }
 
 export function canExtractText(mimeType: string, name: string): boolean {
-  return (
-    mimeType === "application/pdf" ||
-    mimeType === MIME_BY_EXT.docx ||
-    TEXT_MIME_RE.test(mimeType) ||
-    TEXT_EXT_RE.test(name)
-  );
+  return mimeType === "application/pdf" || mimeType === MIME_BY_EXT.docx || TEXT_MIME_RE.test(mimeType) || TEXT_EXT_RE.test(name);
 }
 
 /** Returns the raw text (NOT redacted yet) or undefined. */

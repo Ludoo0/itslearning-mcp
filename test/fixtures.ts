@@ -17,7 +17,7 @@ import type {
   ApiThread,
   Paged,
 } from "../src/api/types";
-import { type AppContext, type ItslearningApi, createContext } from "../src/context";
+import { type AppContext, createContext, type ItslearningApi } from "../src/context";
 import { ToolError } from "../src/errors";
 import type { FileCache } from "../src/files/cache";
 import { FileService } from "../src/files/service";
@@ -26,7 +26,7 @@ import { Redactor } from "../src/redaction/redactor";
 import { PersonRegistry } from "../src/redaction/registry";
 import { TeacherDirectory } from "../src/redaction/teachers";
 import { WebBrowser } from "../src/websession/browser";
-import { type FakeWeb, createFakeWeb } from "./fakeWeb";
+import { createFakeWeb, type FakeWeb } from "./fakeWeb";
 
 // ---------- People (all fictional) ----------
 // 1001 Jonas Beispielmann – the account owner
@@ -130,8 +130,20 @@ const classmates = [1, 2, 3, 4, 5].map((i) =>
 );
 
 export const MESSAGES_9001: ApiMessage[] = [
-  { MessageId: 501, Created: "2026-11-15T10:00:00Z", CreatedBy: 2001, CreatedByName: "Sabine Lindqvist", Text: "Hi Jonas, Mia Sonnenfeld has your notebook." },
-  { MessageId: 499, Created: "2026-11-14T10:00:00Z", CreatedBy: 1001, CreatedByName: "Jonas Beispielmann", Text: "I'll bring it tomorrow, Mrs Lindqvist." },
+  {
+    MessageId: 501,
+    Created: "2026-11-15T10:00:00Z",
+    CreatedBy: 2001,
+    CreatedByName: "Sabine Lindqvist",
+    Text: "Hi Jonas, Mia Sonnenfeld has your notebook.",
+  },
+  {
+    MessageId: 499,
+    Created: "2026-11-14T10:00:00Z",
+    CreatedBy: 1001,
+    CreatedByName: "Jonas Beispielmann",
+    Text: "I'll bring it tomorrow, Mrs Lindqvist.",
+  },
   { MessageId: 500, Created: "2026-11-14T11:00:00Z", CreatedBy: 3001, CreatedByName: "Mia Sonnenfeld", Text: "deleted", IsDeleted: true },
   {
     MessageId: 502,
@@ -171,7 +183,13 @@ export const THREADS: ApiThread[] = [
     CreatedByTeacher: true,
     Participants: [part(selfPart(), "Student"), part(P_STUDENT, "Student"), part(P_TEACHER2, null)],
     ParticipantsCount: 3,
-    LastMessage: { MessageId: 600, Created: "2026-11-13T10:00:00Z", CreatedBy: 3001, CreatedByName: "Mia Sonnenfeld", Text: "See you tomorrow!" },
+    LastMessage: {
+      MessageId: 600,
+      Created: "2026-11-13T10:00:00Z",
+      CreatedBy: 3001,
+      CreatedByName: "Mia Sonnenfeld",
+      Text: "See you tomorrow!",
+    },
     LastReadInstantMessageId: 600,
     SortIndex: 20,
   },
@@ -184,7 +202,13 @@ export const THREADS: ApiThread[] = [
     LocationRecipients: [{ Title: "English 8b", Type: 1 }],
     Participants: [part(selfPart(), "Student"), part(P_TEACHER, "Teacher"), ...classmates],
     ParticipantsCount: 7,
-    LastMessage: { MessageId: 700, Created: "2026-11-12T10:00:00Z", CreatedBy: 2001, CreatedByName: "Sabine Lindqvist", Text: "Info for everyone" },
+    LastMessage: {
+      MessageId: 700,
+      Created: "2026-11-12T10:00:00Z",
+      CreatedBy: 2001,
+      CreatedByName: "Sabine Lindqvist",
+      Text: "Info for everyone",
+    },
     LastReadInstantMessageId: 650,
     SortIndex: 10,
   },
@@ -197,7 +221,13 @@ export const THREADS: ApiThread[] = [
     CreatedByTeacher: true,
     Participants: [part(selfPart(), "Student"), part(P_TEACHER, "Teacher"), ...classmates.slice(0, 4)],
     ParticipantsCount: 6,
-    LastMessage: { MessageId: 800, Created: "2026-11-11T10:00:00Z", CreatedBy: 2001, CreatedByName: "Sabine Lindqvist", Text: "Bring headphones" },
+    LastMessage: {
+      MessageId: 800,
+      Created: "2026-11-11T10:00:00Z",
+      CreatedBy: 2001,
+      CreatedByName: "Sabine Lindqvist",
+      Text: "Bring headphones",
+    },
     LastReadInstantMessageId: 800,
     SortIndex: 5,
   },
@@ -213,8 +243,24 @@ export const SELF: ApiPerson = {
 };
 
 export const COURSES_V1: ApiCourse[] = [
-  { CourseId: 11, Title: "Math 8b", CourseCode: "", LastUpdatedUtc: "2026-11-15T10:00:00Z", NewNotificationsCount: 2, NewBulletinsCount: 0, HasStudentPermissions: true },
-  { CourseId: 12, Title: "English 8b", CourseCode: "", LastUpdatedUtc: "2026-11-14T10:00:00Z", NewNotificationsCount: 0, NewBulletinsCount: 1, HasStudentPermissions: true },
+  {
+    CourseId: 11,
+    Title: "Math 8b",
+    CourseCode: "",
+    LastUpdatedUtc: "2026-11-15T10:00:00Z",
+    NewNotificationsCount: 2,
+    NewBulletinsCount: 0,
+    HasStudentPermissions: true,
+  },
+  {
+    CourseId: 12,
+    Title: "English 8b",
+    CourseCode: "",
+    LastUpdatedUtc: "2026-11-14T10:00:00Z",
+    NewNotificationsCount: 0,
+    NewBulletinsCount: 1,
+    HasStudentPermissions: true,
+  },
 ];
 export const COURSES_V2: ApiCourse[] = [
   ...COURSES_V1,
@@ -225,32 +271,76 @@ export const NOW = new Date("2026-11-16T12:00:00Z");
 
 export const TASKS: ApiTask[] = [
   {
-    TaskId: 501, ElementId: 7001, Title: "Fractions worksheet", Description: "", LocationTitle: "Math 8b",
-    LocationType: "Course", LocationId: 11, Status: "NotStarted", Deadline: "2026-11-18T07:00:00Z",
-    ElementType: "LearningToolElement", Homework: true,
+    TaskId: 501,
+    ElementId: 7001,
+    Title: "Fractions worksheet",
+    Description: "",
+    LocationTitle: "Math 8b",
+    LocationType: "Course",
+    LocationId: 11,
+    Status: "NotStarted",
+    Deadline: "2026-11-18T07:00:00Z",
+    ElementType: "LearningToolElement",
+    Homework: true,
   },
   {
-    TaskId: 502, ElementId: 7002, Title: "Reading log", Description: "Please, Jonas: read chapter 3",
-    LocationTitle: "English 8b", LocationType: "Course", LocationId: 12, Status: "NotStarted",
-    Deadline: "2026-11-10T07:00:00Z", ElementType: "CustomActivity", Homework: false,
+    TaskId: 502,
+    ElementId: 7002,
+    Title: "Reading log",
+    Description: "Please, Jonas: read chapter 3",
+    LocationTitle: "English 8b",
+    LocationType: "Course",
+    LocationId: 12,
+    Status: "NotStarted",
+    Deadline: "2026-11-10T07:00:00Z",
+    ElementType: "CustomActivity",
+    Homework: false,
   },
   {
-    TaskId: 503, ElementId: 7003, Title: "Presentation", LocationTitle: "English 8b", LocationType: "Course",
-    LocationId: 12, Status: "Completed", Deadline: "2026-11-01T07:00:00Z", ElementType: "LearningToolElement",
+    TaskId: 503,
+    ElementId: 7003,
+    Title: "Presentation",
+    LocationTitle: "English 8b",
+    LocationType: "Course",
+    LocationId: 12,
+    Status: "Completed",
+    Deadline: "2026-11-01T07:00:00Z",
+    ElementType: "LearningToolElement",
   },
   {
-    TaskId: 504, ElementId: 7004, Title: "Project without deadline", LocationTitle: "Math 8b", LocationType: "Course",
-    LocationId: 11, Status: "NotStarted", Deadline: null, ElementType: "LearningToolElement",
+    TaskId: 504,
+    ElementId: 7004,
+    Title: "Project without deadline",
+    LocationTitle: "Math 8b",
+    LocationType: "Course",
+    LocationId: 11,
+    Status: "NotStarted",
+    Deadline: null,
+    ElementType: "LearningToolElement",
   },
   {
     // Leftover from a previous school year (inactive course)
-    TaskId: 505, ElementId: 7005, Title: "Old homework", LocationTitle: "Math 7b", LocationType: "Course",
-    LocationId: 9, Status: "NotStarted", Deadline: "2025-06-01T07:00:00Z", ElementType: "CustomActivity",
+    TaskId: 505,
+    ElementId: 7005,
+    Title: "Old homework",
+    LocationTitle: "Math 7b",
+    LocationType: "Course",
+    LocationId: 9,
+    Status: "NotStarted",
+    Deadline: "2025-06-01T07:00:00Z",
+    ElementType: "CustomActivity",
   },
   {
     // Overdue in a current course, but long ago (older than 60 days)
-    TaskId: 506, ElementId: 7006, Title: "Summer task", LocationTitle: "Math 8b", LocationType: "Course",
-    LocationId: 11, Status: "NotStarted", Deadline: "2026-08-01T07:00:00Z", ElementType: "LearningToolElement",
+    TaskId: 506,
+    ElementId: 7006,
+    Title: "Summer task",
+    LocationTitle: "Math 8b",
+    LocationType: "Course",
+    LocationId: 11,
+    Status: "NotStarted",
+    Deadline: "2026-08-01T07:00:00Z",
+    ElementType: "LearningToolElement",
   },
 ];
 
@@ -280,9 +370,23 @@ export const ASSIGNMENTS: Record<number, ApiAssignment> = {
 const VIEW = (id: number) => `https://demo.itslearning.com/LearningToolElement/ViewLearningToolElement.aspx?LearningToolElementId=${id}`;
 export const RESOURCES: Record<number, ApiResource> = {
   7300: { ElementId: 7300, Title: "Worksheets", ElementType: "Folder", CourseId: 11, Path: "Worksheets" },
-  7201: { ElementId: 7201, Title: "Worksheet week 1", ElementType: "LearningToolElement", CourseId: 11, ContentUrl: VIEW(7201), Homework: true },
+  7201: {
+    ElementId: 7201,
+    Title: "Worksheet week 1",
+    ElementType: "LearningToolElement",
+    CourseId: 11,
+    ContentUrl: VIEW(7201),
+    Homework: true,
+  },
   7202: { ElementId: 7202, Title: "Note", ElementType: "LearningToolElement", CourseId: 11, ContentUrl: VIEW(7202) },
-  7203: { ElementId: 7203, Title: "Solutions", ElementType: "LearningToolElement", CourseId: 11, ContentUrl: VIEW(7201), Path: "Worksheets/Solutions" },
+  7203: {
+    ElementId: 7203,
+    Title: "Solutions",
+    ElementType: "LearningToolElement",
+    CourseId: 11,
+    ContentUrl: VIEW(7201),
+    Path: "Worksheets/Solutions",
+  },
   7101: { ElementId: 7101, Title: "Reading list", ElementType: "LearningToolElement", CourseId: 12, ContentUrl: VIEW(7201) },
 };
 
@@ -299,7 +403,12 @@ export function fakeApi(overrides: Partial<ItslearningApi> = {}): ItslearningApi
       return a;
     },
     notificationStream: async (i, s) => paged(STREAM, i, s),
-    courseStream: async (courseId, i, s) => paged(STREAM.filter((n) => n.LocationId === courseId), i, s),
+    courseStream: async (courseId, i, s) =>
+      paged(
+        STREAM.filter((n) => n.LocationId === courseId),
+        i,
+        s,
+      ),
     courseBulletins: async (courseId, i, s) => paged(BULLETINS[courseId] ?? [], i, s),
     bulletinElements: async (id) => BULLETIN_ELEMENTS[id] ?? [],
     // itslearning reports Total = 0 for threads and messages
@@ -315,7 +424,8 @@ export function fakeApi(overrides: Partial<ItslearningApi> = {}): ItslearningApi
       if (!r) throw new ToolError("NOT_FOUND", "Element not found.", 404);
       return r;
     },
-    ssoUrl: async (target) => `https://demo.itslearning.com/SSO/MobileAppLoginSso.aspx?Signature=SIG-SECRET&ReturnUrl=${encodeURIComponent(target)}`,
+    ssoUrl: async (target) =>
+      `https://demo.itslearning.com/SSO/MobileAppLoginSso.aspx?Signature=SIG-SECRET&ReturnUrl=${encodeURIComponent(target)}`,
     courseParticipants: async (courseId) =>
       courseId === 11
         ? [

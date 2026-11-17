@@ -52,6 +52,7 @@ Bun + TypeScript (strict) + `@modelcontextprotocol/sdk` + `zod`. No build step; 
 
 ```bash
 bun install
+bun run lint                     # Biome lint + format check (CI fails on findings); bun run format fixes formatting
 bun run typecheck
 bun test                         # unit/integration tests, fake data only, no network
 bun run call [tool] [key=value…] # call a tool against a real instance (uses .env or prompts)

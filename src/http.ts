@@ -6,8 +6,8 @@
  * A fresh McpServer per request on top of the shared AppContext (login, caches and person registry persist).
  */
 import { timingSafeEqual } from "node:crypto";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { AppContext } from "./context";
 import { log } from "./log";
 

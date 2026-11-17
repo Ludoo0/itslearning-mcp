@@ -18,7 +18,9 @@ describe("secrets", () => {
   });
 
   test("stripSecretUrls only replaces critical links", () => {
-    const out = stripSecretUrls("See https://example.org/a. Internal: https://demo.itslearning.com/x?y=1, file https://cdn.example.org/f?sign=zz");
+    const out = stripSecretUrls(
+      "See https://example.org/a. Internal: https://demo.itslearning.com/x?y=1, file https://cdn.example.org/f?sign=zz",
+    );
     expect(out).toContain("https://example.org/a.");
     expect(out).toContain("[itslearning link],");
     expect(out).toContain("[link removed]");
@@ -36,10 +38,14 @@ describe("secrets", () => {
   });
 
   test("URL-encoded data blobs are removed, normal percentages stay", () => {
-    expect(stripSecretUrls("Start: %7B%22PersonId%22%3A12345678%2C%22Name%22%3A%22M%C3%BCller%22%7D end")).toBe("Start: [encoded data removed] end");
+    expect(stripSecretUrls("Start: %7B%22PersonId%22%3A12345678%2C%22Name%22%3A%22M%C3%BCller%22%7D end")).toBe(
+      "Start: [encoded data removed] end",
+    );
     expect(stripSecretUrls("launch?data=%7B%22a%22%3A1%7D")).toBe("[encoded data removed]");
     expect(stripSecretUrls("50% off on 20 % of the area, grade 2%")).toBe("50% off on 20 % of the area, grade 2%");
-    expect(stripSecretUrls("https://example.org/search?q=Fr%C3%A4ctions%20and%20percent")).toBe("https://example.org/search?q=Fr%C3%A4ctions%20and%20percent");
+    expect(stripSecretUrls("https://example.org/search?q=Fr%C3%A4ctions%20and%20percent")).toBe(
+      "https://example.org/search?q=Fr%C3%A4ctions%20and%20percent",
+    );
   });
 
   test("external links with encoded personal data in parameters are not shareable", () => {
@@ -65,7 +71,9 @@ describe("secrets", () => {
   });
 
   test("German placeholders with labels=de", () => {
-    expect(stripSecretUrls("https://demo.itslearning.com/x und %7B%22a%22%3A1%7D", LABELS.de)).toBe("[itslearning-Link] und [kodierte Daten entfernt]");
+    expect(stripSecretUrls("https://demo.itslearning.com/x und %7B%22a%22%3A1%7D", LABELS.de)).toBe(
+      "[itslearning-Link] und [kodierte Daten entfernt]",
+    );
   });
 });
 

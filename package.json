@@ -34,7 +34,9 @@
     "call": "bun run scripts/call.ts",
     "probe": "bun run scripts/dev/probe.ts",
     "smoke": "bun run scripts/smoke.ts",
-    "check": "bun run src/check/cli.ts"
+    "check": "bun run src/check/cli.ts",
+    "lint": "biome ci .",
+    "format": "biome check --write ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -43,6 +45,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.8",
     "@types/bun": "latest",
     "typescript": "^7.0.2"
   }

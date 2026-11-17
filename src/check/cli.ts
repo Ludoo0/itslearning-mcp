@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { readHidden, readLine } from "../cli/prompt";
 /**
  * Compatibility check CLI.
  *
@@ -14,7 +15,6 @@
  * public checks passed and only to *.itslearning.com hosts. Nothing is stored. The output contains no names or content.
  */
 import { normalizeBaseUrl } from "../config";
-import { readHidden, readLine } from "../cli/prompt";
 import { type CheckResult, type CheckStatus, runCheck } from "./core";
 
 const args = process.argv.slice(2);
@@ -36,13 +36,18 @@ const json = flags.has("--json");
 const interactive = Boolean(process.stdin.isTTY) && !json;
 
 async function main() {
-  const rawUrl = positional[0] ?? process.env.ITSL_BASE_URL ?? (interactive ? await readLine("itslearning URL (e.g. yourschool.itslearning.com): ") : "");
+  const rawUrl =
+    positional[0] ??
+    process.env.ITSL_BASE_URL ??
+    (interactive ? await readLine("itslearning URL (e.g. yourschool.itslearning.com): ") : "");
   if (!rawUrl) throw new Error("No itslearning URL given. Usage: bun run check <itslearning-url>");
   let baseUrl: string;
   try {
     baseUrl = normalizeBaseUrl(rawUrl);
   } catch (e) {
-    throw new Error(`Invalid URL "${rawUrl}" (${e instanceof Error ? e.message : e}) – use just the instance, e.g. https://yourschool.itslearning.com`);
+    throw new Error(
+      `Invalid URL "${rawUrl}" (${e instanceof Error ? e.message : e}) – use just the instance, e.g. https://yourschool.itslearning.com`,
+    );
   }
 
   let credentials: { username: string; password: string } | undefined;
@@ -59,8 +64,10 @@ async function main() {
       credentials = { username: envUser, password: envPass };
       if (!json) console.log("Using ITSL_USERNAME / ITSL_PASSWORD from the environment (ITSL_BASE_URL matches) for the login checks.");
     } else if (interactive) {
-      if (envUser && envPass && !json) console.log("Note: ITSL_USERNAME / ITSL_PASSWORD are set for a different instance and are not used.");
-      const want = flags.has("--login") || /^(y|yes|j|ja)$/i.test(await readLine("Also test a login with your itslearning account? [y/N] "));
+      if (envUser && envPass && !json)
+        console.log("Note: ITSL_USERNAME / ITSL_PASSWORD are set for a different instance and are not used.");
+      const want =
+        flags.has("--login") || /^(y|yes|j|ja)$/i.test(await readLine("Also test a login with your itslearning account? [y/N] "));
       if (want) {
         const username = await readLine("User name: ");
         const password = await readHidden("Password: ");
@@ -83,13 +90,18 @@ async function main() {
     const fails = report.results.filter((r) => r.status === "fail");
     console.log("");
     if (report.verdict === "compatible") {
-      console.log(report.loginTested ? "✅ Compatible – itslearning-mcp should work with this instance and account." : "✅ Looks compatible. Run with --login to also test your account.");
+      console.log(
+        report.loginTested
+          ? "✅ Compatible – itslearning-mcp should work with this instance and account."
+          : "✅ Looks compatible. Run with --login to also test your account.",
+      );
     } else if (report.verdict === "partial") {
       console.log("⚠️  Partially compatible – it should work, with the limitations marked above.");
       if (!report.loginTested) console.log("   Run with --login to also test your account.");
     } else {
       console.log("❌ Not compatible – see the failed checks above.");
-      if (fails.some((r) => r.id === "login-mode")) console.log("   Instances with single sign-on only are on the roadmap (docs/roadmap.md).");
+      if (fails.some((r) => r.id === "login-mode"))
+        console.log("   Instances with single sign-on only are on the roadmap (docs/roadmap.md).");
     }
     console.log("\nThis output contains no names or content and can be shared, e.g. in a GitHub issue.");
   }

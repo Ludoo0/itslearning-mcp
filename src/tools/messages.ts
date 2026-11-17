@@ -48,7 +48,9 @@ function threadTitle(ctx: AppContext, t: ApiThread, others: Person[]): string {
 
 export function toThreadDto(ctx: AppContext, t: ApiThread): ThreadDto {
   const people = ctx.redactor.people;
-  const others = (t.Participants ?? []).filter((p) => p.PersonId !== people.selfPersonId && !p.IsDeleted).map((p) => people.resolve(p.PersonId));
+  const others = (t.Participants ?? [])
+    .filter((p) => p.PersonId !== people.selfPersonId && !p.IsDeleted)
+    .map((p) => people.resolve(p.PersonId));
   // Large groups: list teachers only (pseudonym lists of 30 students help nobody)
   const listed = others.length > MAX_LISTED_PARTICIPANTS ? others.filter((p) => p.role === "teacher") : others;
   const lm = t.LastMessage;
@@ -57,7 +59,7 @@ export function toThreadDto(ctx: AppContext, t: ApiThread): ThreadDto {
     title: threadTitle(ctx, t, others),
     type: t.Type ?? "Unknown",
     participants: listed,
-    participantsCount: t.ParticipantsCount ?? (t.Participants?.length ?? 0),
+    participantsCount: t.ParticipantsCount ?? t.Participants?.length ?? 0,
     lastMessage: lm
       ? { at: lm.Created ?? null, from: people.resolve(lm.CreatedBy), preview: lm.IsDeleted ? "" : ctx.redactor.text(lm.Text, PREVIEW_LEN) }
       : null,
@@ -121,7 +123,8 @@ export type MessageDto = {
 };
 
 function toMessageDto(ctx: AppContext, threadId: number, m: ApiMessage): MessageDto {
-  const link = m.Link && isShareableUrl(m.Link) ? { url: m.Link, ...(m.LinkTitle ? { title: ctx.redactor.title(m.LinkTitle) } : {}) } : undefined;
+  const link =
+    m.Link && isShareableUrl(m.Link) ? { url: m.Link, ...(m.LinkTitle ? { title: ctx.redactor.title(m.LinkTitle) } : {}) } : undefined;
   let attachment: FileRefDto | undefined;
   if (m.AttachmentUrl && !m.IsDeleted) {
     const fileRef = formatRef({ kind: "message", threadId, messageId: m.MessageId });
@@ -153,7 +156,9 @@ export async function getThread(ctx: AppContext, args: GetThreadArgs) {
   const msgs = res.Messages?.EntityArray ?? [];
   for (const m of msgs) registerMessage(ctx.redactor.people, m);
 
-  const sorted = [...msgs].sort((a, b) => (Date.parse(a.Created ?? "") || 0) - (Date.parse(b.Created ?? "") || 0) || a.MessageId - b.MessageId);
+  const sorted = [...msgs].sort(
+    (a, b) => (Date.parse(a.Created ?? "") || 0) - (Date.parse(b.Created ?? "") || 0) || a.MessageId - b.MessageId,
+  );
   // itslearning reports Total = 0 here → a full page means there may be older messages
   const total = res.Messages?.Total ?? 0;
   const hasMore = msgs.length >= limit;
@@ -188,7 +193,8 @@ export function registerMessageTools(server: McpServer, ctx: AppContext) {
     "itslearning_get_message_thread",
     {
       title: "Read conversation",
-      description: "Messages of a conversation in chronological order (oldest first). Texts are redacted. Load older messages via beforeMessageId.",
+      description:
+        "Messages of a conversation in chronological order (oldest first). Texts are redacted. Load older messages via beforeMessageId.",
       inputSchema: getThreadInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },

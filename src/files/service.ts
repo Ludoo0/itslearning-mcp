@@ -13,12 +13,12 @@ import { LABELS, type Labels } from "../redaction/labels";
 import {
   type BrowseResult,
   CookieJar,
-  type WebBrowser,
   extractLinks,
   filenameFromDisposition,
   isFileResponse,
   looksLikeLoginPage,
   readLimited,
+  type WebBrowser,
 } from "../websession/browser";
 import type { FileCache } from "./cache";
 import { resolveMimeType } from "./extract";
@@ -60,7 +60,8 @@ export class FileService {
     if (hit) return { type: "file", ref, name: hit.meta.name, mimeType: hit.meta.mimeType, data: hit.data, cached: true };
 
     const result = await this.fetchSource(ref, src);
-    if (result.type === "file") this.opts.cache?.put(ref, { name: result.name, mimeType: result.mimeType, size: result.data.byteLength }, result.data);
+    if (result.type === "file")
+      this.opts.cache?.put(ref, { name: result.name, mimeType: result.mimeType, size: result.data.byteLength }, result.data);
     return result;
   }
 
@@ -108,7 +109,8 @@ export class FileService {
   /** Course element via the web interface. If the web session expired, retry once with a fresh session. */
   private async downloadElement(ref: string, elementId: number): Promise<DownloadResult> {
     const detail = await this.api.resource(elementId);
-    if (/folder/i.test(detail.ElementType ?? "")) throw new ToolError("NOT_A_FILE", "This is a folder – list its content with itslearning_list_course_files.");
+    if (/folder/i.test(detail.ElementType ?? ""))
+      throw new ToolError("NOT_A_FILE", "This is a folder – list its content with itslearning_list_course_files.");
     const target = detail.ContentUrl || detail.Url;
     if (!target) throw new ToolError("NOT_A_FILE", "This element has no content.");
     const title = detail.Title?.trim() || `Element-${elementId}`;

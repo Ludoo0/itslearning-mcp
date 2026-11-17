@@ -17,7 +17,9 @@ afterAll(() => server.stop(true));
 
 async function client(key = KEY) {
   const c = new Client({ name: "http-test", version: "0" });
-  await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${key}` } } }));
+  await c.connect(
+    new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${key}` } } }),
+  );
   return c;
 }
 
@@ -41,7 +43,11 @@ describe("HTTP transport", () => {
   });
 
   test("browser origin is rejected (DNS rebinding protection)", async () => {
-    const res = await fetch(`${base}/mcp`, { method: "POST", headers: { Origin: "https://evil.example", Authorization: `Bearer ${KEY}` }, body: "{}" });
+    const res = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { Origin: "https://evil.example", Authorization: `Bearer ${KEY}` },
+      body: "{}",
+    });
     expect(res.status).toBe(403);
   });
 

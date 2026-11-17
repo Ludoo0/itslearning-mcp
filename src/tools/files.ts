@@ -21,12 +21,21 @@ const PAGE_TEXT_LEN = 5_000;
 export function redactFileName(ctx: AppContext, name: string): string {
   const ext = extensionOf(name);
   const base = ext ? name.slice(0, -(ext.length + 1)) : name;
-  const clean = ctx.redactor.title(base).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").trim() || ctx.redactor.labels.file;
+  const clean =
+    ctx.redactor
+      .title(base)
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are exactly what must not end up in a file name
+      .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_")
+      .trim() || ctx.redactor.labels.file;
   return ext ? `${clean}.${ext}` : clean;
 }
 
 export function elementFileRef(ctx: AppContext, elementId: number, title: string | null | undefined): FileRefDto {
-  return { fileRef: formatRef({ kind: "element", elementId }), name: ctx.redactor.title(title) || ctx.redactor.labels.element(elementId), kind: "unknown" };
+  return {
+    fileRef: formatRef({ kind: "element", elementId }),
+    name: ctx.redactor.title(title) || ctx.redactor.labels.element(elementId),
+    kind: "unknown",
+  };
 }
 
 // ---------- list_course_files ----------
@@ -63,7 +72,8 @@ export async function listCourseFiles(ctx: AppContext, args: ListCourseFilesArgs
 
   while (queue.length) {
     const { folderId, depth } = queue.shift()!;
-    const res = folderId === undefined ? await ctx.it.courseResources(args.courseId) : await ctx.it.folderResources(args.courseId, folderId);
+    const res =
+      folderId === undefined ? await ctx.it.courseResources(args.courseId) : await ctx.it.folderResources(args.courseId, folderId);
     for (const r of res) {
       if (items.length >= MAX_ITEMS) {
         truncated = true;
@@ -96,7 +106,9 @@ export const downloadFileInput = {
   mode: z
     .enum(["auto", "text", "blob", "both"])
     .default("auto")
-    .describe("auto = text if extractable (PDF, DOCX, text), images as image, otherwise the file · text = redacted text only · blob = file only · both"),
+    .describe(
+      "auto = text if extractable (PDF, DOCX, text), images as image, otherwise the file · text = redacted text only · blob = file only · both",
+    ),
   maxTextChars: z.number().int().min(500).max(200_000).default(50_000),
 };
 type DownloadArgs = { fileRef: string; mode?: "auto" | "text" | "blob" | "both"; maxTextChars?: number };

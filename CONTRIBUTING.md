@@ -8,6 +8,7 @@ Thanks for your interest! Bug reports, ideas and pull requests are welcome.
 git clone https://github.com/Ludoo0/itslearning-mcp.git
 cd itslearning-mcp
 bun install
+bun run lint        # Biome: lint + formatting check (bun run format fixes formatting)
 bun run typecheck
 bun test
 ```
@@ -29,7 +30,7 @@ To try changes against a real account, copy `.env.example` to `.env`, fill it in
 
 ## Pull request checklist
 
-- [ ] `bun run typecheck` and `bun test` pass
+- [ ] `bun run lint`, `bun run typecheck` and `bun test` pass
 - [ ] New behaviour is covered by tests with fictional data
 - [ ] Redaction-relevant changes: a regression test that would have caught the leak, and `bun run smoke` against a real account reports no leaks (if you have one)
 - [ ] No real data, instance URLs or IDs anywhere in the diff

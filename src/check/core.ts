@@ -30,6 +30,7 @@ export type CheckOptions = {
 const UA = "itslearning-mcp-check";
 const P = "/restapi/personal";
 
+// biome-ignore lint/suspicious/noExplicitAny: the check inspects raw, untyped API responses defensively
 type Json = Record<string, any>;
 
 export async function runCheck(opts: CheckOptions): Promise<CheckReport> {
@@ -47,7 +48,10 @@ export async function runCheck(opts: CheckOptions): Promise<CheckReport> {
   const finish = (loginTested: boolean): CheckReport => ({ baseUrl: base, results, verdict: verdictOf(results), loginTested });
 
   const get = (path: string, headers: Record<string, string> = {}) =>
-    f(path.startsWith("http") ? path : base + path, { headers: { "User-Agent": UA, Accept: "application/json, text/html", ...headers }, signal: AbortSignal.timeout(timeout) });
+    f(path.startsWith("http") ? path : base + path, {
+      headers: { "User-Agent": UA, Accept: "application/json, text/html", ...headers },
+      signal: AbortSignal.timeout(timeout),
+    });
   const token = async (params: Record<string, string>) => {
     const res = await f(`${base}/restapi/oauth2/token`, {
       method: "POST",
@@ -85,7 +89,12 @@ export async function runCheck(opts: CheckOptions): Promise<CheckReport> {
   const mode = detectLoginModeFromHtml(html);
   if (mode === "native") add("login-mode", "Native login (user name + password)", "ok", "available on the login page");
   else if (mode === "federated-only")
-    add("login-mode", "Native login (user name + password)", "fail", "only single sign-on via an external identity provider – not supported (yet)");
+    add(
+      "login-mode",
+      "Native login (user name + password)",
+      "fail",
+      "only single sign-on via an external identity provider – not supported (yet)",
+    );
   else add("login-mode", "Native login (user name + password)", "warn", "could not detect the login method from the start page");
 
   // ---------- 3. REST API ----------
@@ -130,10 +139,17 @@ export async function runCheck(opts: CheckOptions): Promise<CheckReport> {
   }
 
   // ---------- 5. Login with credentials ----------
-  const login = await token({ grant_type: "password", username: opts.credentials.username, password: opts.credentials.password }).catch(() => undefined);
+  const login = await token({ grant_type: "password", username: opts.credentials.username, password: opts.credentials.password }).catch(
+    () => undefined,
+  );
   if (!login?.json.access_token) {
     const code = String(login?.json.ErrorCode ?? login?.json.error ?? "");
-    add("login", "Login with your account", "fail", /InvalidUser/i.test(code) ? "wrong user name or password" : `login failed (HTTP ${login?.status ?? "–"}${code ? `, ${code}` : ""})`);
+    add(
+      "login",
+      "Login with your account",
+      "fail",
+      /InvalidUser/i.test(code) ? "wrong user name or password" : `login failed (HTTP ${login?.status ?? "–"}${code ? `, ${code}` : ""})`,
+    );
     return finish(true);
   }
   add("login", "Login with your account", "ok", `access token valid for ${login.json.expires_in ?? "?"} s`);
@@ -194,7 +210,12 @@ export async function runCheck(opts: CheckOptions): Promise<CheckReport> {
   for (const [id, title, path] of endpoints) {
     const r = await api(path);
     if (!r.json) {
-      add(id, title, id === "messages" ? "warn" : "fail", `HTTP ${r.status || "error"}${id === "messages" ? " – message tools will not work" : ""}`);
+      add(
+        id,
+        title,
+        id === "messages" ? "warn" : "fail",
+        `HTTP ${r.status || "error"}${id === "messages" ? " – message tools will not work" : ""}`,
+      );
       continue;
     }
     const items = list(r.json);
@@ -219,7 +240,13 @@ export async function runCheck(opts: CheckOptions): Promise<CheckReport> {
     }
     const parts = await api(`${P}/courses/${course.CourseId}/participants/v1?PageIndex=0&PageSize=100`);
     if (parts.json) add("participants", "Course participants (for redaction)", "ok", `${list(parts.json).length} participant(s) readable`);
-    else add("participants", "Course participants (for redaction)", "warn", `not readable (HTTP ${parts.status || "error"}) – names in course content are only redacted if seen elsewhere`);
+    else
+      add(
+        "participants",
+        "Course participants (for redaction)",
+        "warn",
+        `not readable (HTTP ${parts.status || "error"}) – names in course content are only redacted if seen elsewhere`,
+      );
   }
 
   // ---------- 10. Download path ----------
@@ -229,7 +256,13 @@ export async function runCheck(opts: CheckOptions): Promise<CheckReport> {
     const target = String(fileElement.ContentUrl || fileElement.Url);
     const r = await api(`${P}/sso/url/v1?url=${encodeURIComponent(target)}`);
     if (r.json?.Url) add("downloads", "File download path (web session)", "ok", "single sign-on URL for the web interface is issued");
-    else add("downloads", "File download path (web session)", "warn", `no SSO URL (HTTP ${r.status || "error"}) – course file downloads will not work`);
+    else
+      add(
+        "downloads",
+        "File download path (web session)",
+        "warn",
+        `no SSO URL (HTTP ${r.status || "error"}) – course file downloads will not work`,
+      );
   }
 
   return finish(true);

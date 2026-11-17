@@ -15,7 +15,7 @@
  * For checking whether an instance is supported at all, use `bun run check` instead.
  */
 
-import { BASE, UA, ItslearningClient, loginWithPassword, refreshToken, promptCredentials } from "../lib";
+import { BASE, ItslearningClient, loginWithPassword, promptCredentials, refreshToken, UA } from "../lib";
 
 const SAVE = process.argv.includes("--save");
 const OUT = "probe-output";
@@ -32,9 +32,22 @@ type Json = any;
 
 /** Fields whose values are harmless categories and may stay in the report. */
 const ENUM_FIELDS = new Set([
-  "ElementType", "Status", "Type", "LearningToolType", "CourseFocus", "ContextRole",
-  "NotificationType", "ContentType", "TaskStatus", "AssessmentType", "FeatureType",
-  "EventType", "ThreadType", "MessageType", "FileType", "SubmissionStatus",
+  "ElementType",
+  "Status",
+  "Type",
+  "LearningToolType",
+  "CourseFocus",
+  "ContextRole",
+  "NotificationType",
+  "ContentType",
+  "TaskStatus",
+  "AssessmentType",
+  "FeatureType",
+  "EventType",
+  "ThreadType",
+  "MessageType",
+  "FileType",
+  "SubmissionStatus",
 ]);
 
 /** Field names that refer directly to people. */
@@ -48,7 +61,10 @@ const newCtx = (): Ctx => ({ enums: new Map(), urls: new Map() });
 
 function addTo(map: Map<string, Set<string>>, key: string, value: string, limit = 15) {
   let set = map.get(key);
-  if (!set) map.set(key, (set = new Set()));
+  if (!set) {
+    set = new Set();
+    map.set(key, set);
+  }
   if (set.size < limit) set.add(value);
 }
 
@@ -86,9 +102,7 @@ function redactUrl(raw: string, base = BASE): string {
   if (!/(^|\.)itslearning\.com$/i.test(u.hostname)) return "{external-url}";
   const path = u.pathname.split("/").map(redactSegment).join("/");
   const keys = [...new Set(u.searchParams.keys())];
-  const qs = keys.length
-    ? "?" + keys.map((k) => `${k}={${/^\d+$/.test(u.searchParams.get(k) ?? "") ? "n" : "v"}}`).join("&")
-    : "";
+  const qs = keys.length ? `?${keys.map((k) => `${k}={${/^\d+$/.test(u.searchParams.get(k) ?? "") ? "n" : "v"}}`).join("&")}` : "";
   return `${u.protocol}//${u.host}${path}${qs}`;
 }
 
@@ -161,8 +175,7 @@ function sensitivePaths(schema: Json, prefix = ""): { person: string[]; freetext
   return res;
 }
 
-const toRecord = (m: Map<string, Set<string>>) =>
-  m.size ? Object.fromEntries([...m].map(([k, s]) => [k, [...s]])) : undefined;
+const toRecord = (m: Map<string, Set<string>>) => (m.size ? Object.fromEntries([...m].map(([k, s]) => [k, [...s]])) : undefined);
 
 function sanitizeError(text: string): string {
   if (/<html|<!DOCTYPE/i.test(text)) return "HTML error page";
@@ -173,8 +186,12 @@ function sanitizeError(text: string): string {
     .slice(0, 160);
 }
 
-const uniq = <T,>(a: T[]) => [...new Set(a)];
-const slug = (s: string) => s.replace(/[^\w-]+/g, "_").replace(/_+/g, "_").slice(0, 60);
+const uniq = <T>(a: T[]) => [...new Set(a)];
+const slug = (s: string) =>
+  s
+    .replace(/[^\w-]+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 60);
 /** Gets the list from a response: array, {EntityArray} or nested one level ({Resources:{EntityArray}}). */
 const entities = (j: Json): Json[] => {
   if (Array.isArray(j)) return j;
@@ -197,10 +214,11 @@ function findKey(obj: Json, re: RegExp): string | undefined {
 /** Recursively collects all objects that have a field matching `re`. */
 function collectObjectsWithKey(v: Json, re: RegExp, out: Json[] = [], depth = 0): Json[] {
   if (depth > 8 || v === null || typeof v !== "object") return out;
-  if (Array.isArray(v)) v.forEach((x) => collectObjectsWithKey(x, re, out, depth + 1));
-  else {
+  if (Array.isArray(v)) {
+    for (const x of v) collectObjectsWithKey(x, re, out, depth + 1);
+  } else {
     if (Object.keys(v).some((k) => re.test(k))) out.push(v);
-    Object.values(v).forEach((x) => collectObjectsWithKey(x, re, out, depth + 1));
+    for (const x of Object.values(v)) collectObjectsWithKey(x, re, out, depth + 1);
   }
   return out;
 }
@@ -321,7 +339,11 @@ async function browse(url: string, jar: CookieJar, maxHops = 12) {
   return { res, hops, finalUrl: current };
 }
 
-const decodeHtml = (s: string) => s.replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+const decodeHtml = (s: string) =>
+  s
+    .replace(/&amp;/g, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"');
 
 const DOWNLOAD_RE =
   /download|file\.aspx|\/file\/|getfile|filerepository|\.(pdf|docx?|xlsx?|pptx?|od[tsp]|zip|jpe?g|png|gif|mp[34]|txt|rtf)(\?|$)/i;
@@ -472,7 +494,11 @@ async function main() {
   process.stdout.write("\nLogin … ");
   const first = await loginWithPassword(username, password);
   console.log(`OK (expires_in=${first.expires_in}s)`);
-  const auth: Record<string, unknown> = { expiresIn: first.expires_in, tokenType: first.token_type, hasRefreshToken: !!first.refresh_token };
+  const auth: Record<string, unknown> = {
+    expiresIn: first.expires_in,
+    tokenType: first.token_type,
+    hasRefreshToken: !!first.refresh_token,
+  };
   let token = first;
   if (first.refresh_token) {
     try {
@@ -559,11 +585,22 @@ async function main() {
       if (k && b[k]) bulletinIds.push(b[k]);
       for (const img of b.AttachedImages ?? []) if (img?.OriginalFileUrl) bulletinImageUrls.push(img.OriginalFileUrl);
     }
-    await call(`${tag}: stream (incl. light bulletins)`, "/restapi/personal/courses/{courseId}/stream/v1?showLightBulletins=true&PageSize=20", { courseId });
+    await call(
+      `${tag}: stream (incl. light bulletins)`,
+      "/restapi/personal/courses/{courseId}/stream/v1?showLightBulletins=true&PageSize=20",
+      { courseId },
+    );
     await call(`${tag}: tasks`, "/restapi/personal/courses/{courseId}/tasks/v1?PageSize=20", { courseId });
-    await call(`${tag}: calendar`, "/restapi/personal/courses/{courseId}/calendarevents/v1?PageSize=20&fromDate={from}", { courseId, from: isoDate(from) });
-    await call(`${tag}: recently changed resources`, "/restapi/personal/courses/{courseId}/resources/lastupdated/v1?numberOfElements=10", { courseId });
-    const root = entities(await call(`${tag}: resources (root)`, "/restapi/personal/courses/{courseId}/resources/v1?PageSize=100", { courseId }));
+    await call(`${tag}: calendar`, "/restapi/personal/courses/{courseId}/calendarevents/v1?PageSize=20&fromDate={from}", {
+      courseId,
+      from: isoDate(from),
+    });
+    await call(`${tag}: recently changed resources`, "/restapi/personal/courses/{courseId}/resources/lastupdated/v1?numberOfElements=10", {
+      courseId,
+    });
+    const root = entities(
+      await call(`${tag}: resources (root)`, "/restapi/personal/courses/{courseId}/resources/v1?PageSize=100", { courseId }),
+    );
     const isFolder = (r: Json) => /folder/i.test(String(r.ElementType));
     resourcePool.push(...root.filter((r) => !isFolder(r)));
     const folder = root.find(isFolder);
@@ -580,7 +617,9 @@ async function main() {
 
   if (bulletinIds.length) {
     console.log("\n── Bulletin attachments");
-    await call("Bulletin: elements/attachments", "/restapi/personal/courses/bulletins/{bulletinId}/elements/v1", { bulletinId: bulletinIds[0]! });
+    await call("Bulletin: elements/attachments", "/restapi/personal/courses/bulletins/{bulletinId}/elements/v1", {
+      bulletinId: bulletinIds[0]!,
+    });
   }
 
   // --- 5. Tasks (global) + details ---
@@ -591,16 +630,25 @@ async function main() {
   for (const [i, t] of tasks.slice(0, 3).entries()) {
     const elementId = t.ElementId ?? t.TaskId;
     if (!elementId) continue;
-    const a = await call(`Assignment detail #${i + 1} (${t.ElementType ?? "?"})`, "/restapi/personal/assignments/{elementId}/v1", { elementId });
+    const a = await call(`Assignment detail #${i + 1} (${t.ElementType ?? "?"})`, "/restapi/personal/assignments/{elementId}/v1", {
+      elementId,
+    });
     if (!a || assignmentFileTested) continue;
     const fileObj = collectObjectsWithKey(a, /^FileId$/i)[0];
     if (!fileObj) continue;
     assignmentFileTested = true;
-    const r: StepResult = { step: "Assignment file download", endpoint: "/restapi/personal/assignments/{elementId}/files/{fileId}/v1", status: "?" };
+    const r: StepResult = {
+      step: "Assignment file download",
+      endpoint: "/restapi/personal/assignments/{elementId}/files/{fileId}/v1",
+      status: "?",
+    };
     try {
-      const res = await client.get(fill("/restapi/personal/assignments/{elementId}/files/{fileId}/v1", { elementId, fileId: fileObj.FileId }), {
-        redirect: "manual",
-      });
+      const res = await client.get(
+        fill("/restapi/personal/assignments/{elementId}/files/{fileId}/v1", { elementId, fileId: fileObj.FileId }),
+        {
+          redirect: "manual",
+        },
+      );
       r.status = res.status;
       const loc = res.headers.get("location");
       r.redirectPattern = loc ? redactUrl(loc) : null;
@@ -621,12 +669,20 @@ async function main() {
 
   // --- 6. News ---
   console.log("\n── News");
-  const stream = entities(await call("Notification stream v2 (incl. light bulletins)", "/restapi/personal/notifications/stream/v2?showLightBulletins=true&PageSize=30"));
+  const stream = entities(
+    await call(
+      "Notification stream v2 (incl. light bulletins)",
+      "/restapi/personal/notifications/stream/v2?showLightBulletins=true&PageSize=30",
+    ),
+  );
   await call("Notifications v2", "/restapi/personal/notifications/v2?PageSize=20");
   await call("Newsfeed", "/restapi/personal/notifications/newsfeed/v1?PageSize=20");
   await call("Unread counter", "/restapi/personal/notifications/unread-count/v1");
   const notifId = stream.find((n) => n.NotificationId)?.NotificationId;
-  if (notifId) await call("Notification: elements/attachments", "/restapi/personal/notifications/{notificationId}/elements/v1", { notificationId: notifId });
+  if (notifId)
+    await call("Notification: elements/attachments", "/restapi/personal/notifications/{notificationId}/elements/v1", {
+      notificationId: notifId,
+    });
 
   // --- 7. Messages ---
   console.log("\n── Messages");
@@ -675,8 +731,10 @@ async function main() {
   if (SAVE) console.log(`Raw data: ${RAW}/  (PRIVATE – contains personal data, do not share!)`);
 }
 
-if (import.meta.main) main().catch((err) => {
-  console.error(`\nError: ${err instanceof Error ? err.message : err}`);
-  process.exit(1);
-});
-export { redactUrl, schemaOf, sensitivePaths, newCtx, extractLinks };
+if (import.meta.main)
+  main().catch((err) => {
+    console.error(`\nError: ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
+  });
+
+export { extractLinks, newCtx, redactUrl, schemaOf, sensitivePaths };

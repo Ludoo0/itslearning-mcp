@@ -132,7 +132,8 @@ export function assignmentFiles(ctx: AppContext, elementId: number, a: ApiAssign
     const fileId = typeof o.FileId === "number" ? o.FileId : typeof o.Id === "number" ? o.Id : undefined;
     if (fileId === undefined) return;
     const name =
-      [o.FileName, o.Name, o.Title].find((v): v is string => typeof v === "string" && v.trim() !== "") ?? `${ctx.redactor.labels.attachment} ${i + 1}`;
+      [o.FileName, o.Name, o.Title].find((v): v is string => typeof v === "string" && v.trim() !== "") ??
+      `${ctx.redactor.labels.attachment} ${i + 1}`;
     out.push({ fileRef: formatRef({ kind: "assignment", elementId, fileId }), name: redactFileName(ctx, name), kind: "file" });
   });
   return out;

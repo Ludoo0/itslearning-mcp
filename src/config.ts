@@ -64,9 +64,7 @@ export function normalizeBaseUrl(raw: string): string {
   return `${u.protocol}//${u.host}`;
 }
 
-const boolish = z
-  .enum(["true", "false", "1", "0", "yes", "no"])
-  .transform((v) => v === "true" || v === "1" || v === "yes");
+const boolish = z.enum(["true", "false", "1", "0", "yes", "no"]).transform((v) => v === "true" || v === "1" || v === "yes");
 
 const intIn = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
 
@@ -110,7 +108,9 @@ export function loadConfig(env: Env = process.env, readFile: ReadFile = (p) => r
 
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    throw new ConfigError(parsed.error.issues.map((i) => (i.message.includes(String(i.path[0])) ? i.message : `${String(i.path[0])}: ${i.message}`)));
+    throw new ConfigError(
+      parsed.error.issues.map((i) => (i.message.includes(String(i.path[0])) ? i.message : `${String(i.path[0])}: ${i.message}`)),
+    );
   }
   const c = parsed.data;
 

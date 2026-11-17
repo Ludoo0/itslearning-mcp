@@ -13,7 +13,7 @@ import { formatRef, parseRef } from "../src/files/refs";
 import { downloadFile, listCourseFiles } from "../src/tools/files";
 import { getThread } from "../src/tools/messages";
 import { extractLinks, filenameFromDisposition, readLimited } from "../src/websession/browser";
-import { SECRET_MARKERS, createFakeWeb, makePdf } from "./fakeWeb";
+import { createFakeWeb, makePdf, SECRET_MARKERS } from "./fakeWeb";
 import { FORBIDDEN_NAMES, fakeContext } from "./fixtures";
 
 const texts = (r: CallToolResult) => r.content.filter((c) => c.type === "text").map((c) => (c as { text: string }).text);
@@ -45,14 +45,18 @@ describe("building blocks", () => {
       '<img src="/App_Themes/Default/images/file.gif"><a href="https://filerepository.itslearning.com/a?Download=1">x</a><a href="/Proxy/DownloadRedirect.ashx?LearningObjectId=1&amp;LearningObjectInstanceId=2">y</a><iframe src="/inner.aspx"></iframe>',
       "https://resource.itslearning.com/File/View.aspx",
     );
-    expect(l.downloads[0]).toBe("https://resource.itslearning.com/Proxy/DownloadRedirect.ashx?LearningObjectId=1&LearningObjectInstanceId=2");
+    expect(l.downloads[0]).toBe(
+      "https://resource.itslearning.com/Proxy/DownloadRedirect.ashx?LearningObjectId=1&LearningObjectInstanceId=2",
+    );
     expect(l.downloads).toHaveLength(2);
     expect(l.iframes).toEqual(["https://resource.itslearning.com/inner.aspx"]);
   });
 
   test("readLimited aborts when the limit is exceeded", async () => {
     await expect(readLimited(new Response("x".repeat(2000)), 1000)).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
-    await expect(readLimited(new Response("x", { headers: { "content-length": "99999" } }), 1000)).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
+    await expect(readLimited(new Response("x", { headers: { "content-length": "99999" } }), 1000)).rejects.toMatchObject({
+      code: "FILE_TOO_LARGE",
+    });
     expect((await readLimited(new Response("abc"), 1000)).byteLength).toBe(3);
   });
 
@@ -83,7 +87,14 @@ describe("itslearning_download_file", () => {
     const web = createFakeWeb();
     const res = await downloadFile(await fakeContext({}, { web }), { fileRef: "e_7201" });
     const meta = res.structuredContent as Structured;
-    expect(meta).toMatchObject({ kind: "file", name: "Worksheet_Me_Me.txt", mimeType: "text/plain", textIncluded: true, blobIncluded: false, cached: false });
+    expect(meta).toMatchObject({
+      kind: "file",
+      name: "Worksheet_Me_Me.txt",
+      mimeType: "text/plain",
+      textIncluded: true,
+      blobIncluded: false,
+      cached: false,
+    });
     // Fix: clients that only show structuredContent (e.g. Claude Code) must still get the text
     expect(meta.text).toBe("Worksheet for Me\nQuestions to [email]\nTask 1: 3/4 + 1/8");
     expect(meta.textChars).toBe(meta.text!.length);
@@ -120,7 +131,9 @@ describe("itslearning_download_file", () => {
   });
 
   test("course participants protect names that never appeared in a conversation", async () => {
-    const noThreads = { messageThreads: async () => ({ Threads: { EntityArray: [], Total: 0, CurrentPageIndex: 0, PageSize: 0 }, HasMore: false }) };
+    const noThreads = {
+      messageThreads: async () => ({ Threads: { EntityArray: [], Total: 0, CurrentPageIndex: 0, PageSize: 0 }, HasMore: false }),
+    };
     const ctx = await fakeContext(noThreads);
     expect(ctx.redactor.people.role(3001)).toBe("unknown"); // Mia is still unknown
     const res = await downloadFile(ctx, { fileRef: "e_7202" });
@@ -142,7 +155,12 @@ describe("itslearning_download_file", () => {
     const ctx = await fakeContext();
     await getThread(ctx, { threadId: 9001 }); // registers people + remembers the attachment URL
     const res = await downloadFile(ctx, { fileRef: "m_9001_502", mode: "both" });
-    expect(res.structuredContent).toMatchObject({ mimeType: "application/pdf", name: "Notes_Me_Me.pdf", textIncluded: true, blobIncluded: true });
+    expect(res.structuredContent).toMatchObject({
+      mimeType: "application/pdf",
+      name: "Notes_Me_Me.pdf",
+      textIncluded: true,
+      blobIncluded: true,
+    });
     expect((res.structuredContent as Structured).text).toMatch(/Notes by Me and Student-[0-9A-F]{4}/);
     const blob = res.content.find((c) => c.type === "resource") as { resource: { blob: string; uri: string } };
     expect(blob.resource.uri).toBe("itslearning-file:m_9001_502");
@@ -156,7 +174,11 @@ describe("itslearning_download_file", () => {
 
   test("task attachment via redirect; name from filename* redacted", async () => {
     const res = await downloadFile(await fakeContext(), { fileRef: "a_7001_1" });
-    expect(res.structuredContent).toMatchObject({ name: "Café_Me.txt", mimeType: "text/plain", text: "Task from Teacher Lindqvist for Me" });
+    expect(res.structuredContent).toMatchObject({
+      name: "Café_Me.txt",
+      mimeType: "text/plain",
+      text: "Task from Teacher Lindqvist for Me",
+    });
   });
 
   test("bulletin image: returned as image in auto mode, no text field", async () => {
@@ -171,7 +193,9 @@ describe("itslearning_download_file", () => {
   });
 
   test("size limit", async () => {
-    await expect(downloadFile(await fakeContext({}, { maxBytes: 10 }), { fileRef: "e_7201" })).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
+    await expect(downloadFile(await fakeContext({}, { maxBytes: 10 }), { fileRef: "e_7201" })).rejects.toMatchObject({
+      code: "FILE_TOO_LARGE",
+    });
   });
 
   test("unknown message → FILE_REF_UNKNOWN", async () => {
@@ -180,7 +204,10 @@ describe("itslearning_download_file", () => {
 
   test("German labels for file names and fallbacks", async () => {
     const res = await downloadFile(await fakeContext({}, { language: "de" }), { fileRef: "e_7201" });
-    expect(res.structuredContent).toMatchObject({ name: "Worksheet_Ich_Ich.txt", text: "Worksheet for Ich\nQuestions to [E-Mail]\nTask 1: 3/4 + 1/8" });
+    expect(res.structuredContent).toMatchObject({
+      name: "Worksheet_Ich_Ich.txt",
+      text: "Worksheet for Ich\nQuestions to [E-Mail]\nTask 1: 3/4 + 1/8",
+    });
   });
 });
 

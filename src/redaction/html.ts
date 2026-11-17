@@ -52,7 +52,7 @@ export function htmlToText(html: string, labels: Labels = LABELS.en): string {
   s = s.replace(/<li[^>]*>/gi, "\n- ");
   s = s.replace(/<\/li>/gi, "");
   s = s.replace(/<\/(p|div|ul|ol|h[1-6]|tr|table|blockquote)>/gi, "\n");
-  s = s.replace(/<h([1-6])[^>]*>/gi, (_, n: string) => "\n" + "#".repeat(Number(n)) + " ");
+  s = s.replace(/<h([1-6])[^>]*>/gi, (_, n: string) => `\n${"#".repeat(Number(n))} `);
   s = s.replace(/<\/?(strong|b)>/gi, "**");
   s = s.replace(/<\/?(em|i)>/gi, "_");
   s = s.replace(/<img\b[^>]*>/gi, labels.image);

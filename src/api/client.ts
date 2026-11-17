@@ -62,7 +62,12 @@ export class ApiClient {
   }
 
   /** GET with JSON response. `template` (e.g. "/restapi/personal/courses/{courseId}/v1") is used for logging. */
-  async get<T>(template: string, params: Record<string, string | number> = {}, query: Query = {}, opts: { ttlS?: number } = {}): Promise<T> {
+  async get<T>(
+    template: string,
+    params: Record<string, string | number> = {},
+    query: Query = {},
+    opts: { ttlS?: number } = {},
+  ): Promise<T> {
     const path = template.replace(/\{(\w+)\}/g, (_, k) => {
       if (params[k] === undefined) throw new Error(`Parameter ${k} missing for ${template}`);
       return encodeURIComponent(String(params[k]));

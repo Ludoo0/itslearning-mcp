@@ -31,7 +31,9 @@ function parseArgs(tokens: string[]): Record<string, unknown> {
 }
 
 async function main() {
-  const env: Record<string, string> = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
+  const env: Record<string, string> = Object.fromEntries(
+    Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+  );
   if (toolName) {
     const username = process.env.ITSL_USERNAME ?? process.env.ITSL_USER;
     const password = process.env.ITSL_PASSWORD ?? process.env.ITSL_PASS;
@@ -68,12 +70,21 @@ async function main() {
     const args = parseArgs(argTokens);
     const res = await client.callTool({ name: toolName, arguments: args });
     const savedTo = (res.structuredContent as { savedTo?: string } | undefined)?.savedTo;
-    for (const c of res.content as { type: string; text?: string; data?: string; mimeType?: string; resource?: { blob?: string; mimeType?: string } }[]) {
+    for (const c of res.content as {
+      type: string;
+      text?: string;
+      data?: string;
+      mimeType?: string;
+      resource?: { blob?: string; mimeType?: string };
+    }[]) {
       if (c.type === "text") console.log(c.text);
-      else if (c.type === "image") console.log(`[image: ${c.mimeType}, ${Math.round(((c.data?.length ?? 0) * 3) / 4 / 1024)} KB – content not shown]`);
+      else if (c.type === "image")
+        console.log(`[image: ${c.mimeType}, ${Math.round(((c.data?.length ?? 0) * 3) / 4 / 1024)} KB – content not shown]`);
       else if (c.type === "resource") {
         const kb = Math.round(((c.resource?.blob?.length ?? 0) * 3) / 4 / 1024);
-        console.log(`[file: ${c.resource?.mimeType}, ${kb} KB – ${savedTo ? `saved to ${savedTo}` : "content not shown; set DOWNLOAD_DIR=… to save it"}]`);
+        console.log(
+          `[file: ${c.resource?.mimeType}, ${kb} KB – ${savedTo ? `saved to ${savedTo}` : "content not shown; set DOWNLOAD_DIR=… to save it"}]`,
+        );
       }
     }
     if (res.isError) process.exitCode = 1;

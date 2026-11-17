@@ -115,7 +115,11 @@ export async function readLimited(res: Response, maxBytes: number): Promise<Uint
 
 const mb = (bytes: number) => Math.round((bytes / 1_048_576) * 10) / 10;
 
-const decodeHtml = (s: string) => s.replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+const decodeHtml = (s: string) =>
+  s
+    .replace(/&amp;/g, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"');
 
 /** iframes and download links of an HTML page (absolute URLs). */
 export function extractLinks(html: string, baseUrl: string): { iframes: string[]; downloads: string[] } {

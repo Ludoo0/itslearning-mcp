@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ApiClient } from "../src/api/client";
-import { ToolError } from "../src/errors";
+import type { ToolError } from "../src/errors";
 
 const cfg = { baseUrl: "https://demo.itslearning.com", cacheTtlS: 60, maxConcurrency: 2, minRequestIntervalMs: 0 };
 const noSleep = async () => {};
@@ -29,8 +29,10 @@ function server(responses: (() => Response)[]) {
   return { seen, fetchImpl };
 }
 
-const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => () =>
-  new Response(JSON.stringify(body), { status, headers });
+const json =
+  (body: unknown, status = 200, headers: Record<string, string> = {}) =>
+  () =>
+    new Response(JSON.stringify(body), { status, headers });
 
 describe("ApiClient", () => {
   test("sets path parameters, query and bearer", async () => {

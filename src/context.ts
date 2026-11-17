@@ -1,5 +1,5 @@
-import { detectLoginMode } from "./auth/loginMode";
 import type { Itslearning } from "./api/endpoints";
+import { detectLoginMode } from "./auth/loginMode";
 import type { Config } from "./config";
 import { ToolError } from "./errors";
 import type { FileService } from "./files/service";

@@ -8,7 +8,11 @@ import { PersonRegistry, type RegistryOptions } from "../src/redaction/registry"
 import { TeacherDirectory } from "../src/redaction/teachers";
 import { P_STUDENT, P_TEACHER, P_UNKNOWN, SELF } from "./fixtures";
 
-const names = (p: { FirstName: string; LastName: string; FullName: string }) => ({ firstName: p.FirstName, lastName: p.LastName, fullName: p.FullName });
+const names = (p: { FirstName: string; LastName: string; FullName: string }) => ({
+  firstName: p.FirstName,
+  lastName: p.LastName,
+  fullName: p.FullName,
+});
 
 function registry(over: Partial<RegistryOptions> = {}) {
   return new PersonRegistry({

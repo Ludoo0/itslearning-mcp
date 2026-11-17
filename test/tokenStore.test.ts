@@ -54,7 +54,10 @@ describe("TokenStore", () => {
     expect(await ts.getAccessToken()).toBe("A1");
     now = 275_000; // < 30 s → refresh
     expect(await ts.getAccessToken()).toBe("A2");
-    expect(calls).toEqual([{ grant: "password", refresh: undefined }, { grant: "refresh_token", refresh: "R1" }]);
+    expect(calls).toEqual([
+      { grant: "password", refresh: undefined },
+      { grant: "refresh_token", refresh: "R1" },
+    ]);
     const state = JSON.parse(await readFile(join(dir, "state.json"), "utf8"));
     expect(state.refreshToken).toBe("R2");
   });
@@ -72,7 +75,10 @@ describe("TokenStore", () => {
       join(dir, "state.json"),
       JSON.stringify({ baseUrl: "https://demo.itslearning.com", username: "u", refreshToken: "R-alt", updatedAt: "x" }),
     );
-    const { calls, fetchImpl } = tokenServer(() => ({ status: 200, body: { access_token: "A9", refresh_token: "R-neu", expires_in: 300 } }));
+    const { calls, fetchImpl } = tokenServer(() => ({
+      status: 200,
+      body: { access_token: "A9", refresh_token: "R-neu", expires_in: 300 },
+    }));
     const ts = new TokenStore(cfg(), fetchImpl);
     expect(await ts.getAccessToken()).toBe("A9");
     expect(calls).toEqual([{ grant: "refresh_token", refresh: "R-alt" }]);

@@ -80,5 +80,5 @@ export class Redactor {
 
 export function truncate(s: string, maxLen?: number): string {
   if (!maxLen || s.length <= maxLen) return s;
-  return s.slice(0, Math.max(0, maxLen - 1)).trimEnd() + "…";
+  return `${s.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`;
 }

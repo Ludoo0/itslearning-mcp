@@ -57,7 +57,11 @@ export class Itslearning {
   }
 
   courseStream(courseId: number, pageIndex: number, pageSize: number): Promise<Paged<ApiNotification>> {
-    return this.api.get(`${P}/courses/{courseId}/stream/v1`, { courseId }, { showLightBulletins: true, PageIndex: pageIndex, PageSize: pageSize });
+    return this.api.get(
+      `${P}/courses/{courseId}/stream/v1`,
+      { courseId },
+      { showLightBulletins: true, PageIndex: pageIndex, PageSize: pageSize },
+    );
   }
 
   courseBulletins(courseId: number, pageIndex: number, pageSize: number): Promise<Paged<ApiLightBulletin>> {
@@ -85,12 +89,20 @@ export class Itslearning {
 
   /** Content of a course root folder. */
   async courseResources(courseId: number): Promise<ApiResource[]> {
-    const res = await this.api.get<ApiResourceList>(`${P}/courses/{courseId}/resources/v1`, { courseId }, { PageIndex: 0, PageSize: PAGE_SIZE });
+    const res = await this.api.get<ApiResourceList>(
+      `${P}/courses/{courseId}/resources/v1`,
+      { courseId },
+      { PageIndex: 0, PageSize: PAGE_SIZE },
+    );
     return res.Resources?.EntityArray ?? [];
   }
 
   async folderResources(courseId: number, folderId: number): Promise<ApiResource[]> {
-    const res = await this.api.get<ApiResourceList>(`${P}/courses/{courseId}/folders/{folderId}/resources/v1`, { courseId, folderId }, { PageIndex: 0, PageSize: PAGE_SIZE });
+    const res = await this.api.get<ApiResourceList>(
+      `${P}/courses/{courseId}/folders/{folderId}/resources/v1`,
+      { courseId, folderId },
+      { PageIndex: 0, PageSize: PAGE_SIZE },
+    );
     return res.Resources?.EntityArray ?? [];
   }
 

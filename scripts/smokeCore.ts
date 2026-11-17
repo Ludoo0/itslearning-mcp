@@ -9,7 +9,11 @@ import type { AppContext } from "../src/context";
 import { STOPWORDS } from "../src/redaction/freetext";
 
 export type SmokeOptions = { redactTeachers: boolean; details?: boolean; out?: (line: string) => void };
-export type SmokeResult = { leaks: number; runs: { tool: string; ok: boolean; code?: string }[]; participantsStatus: Record<string, string> };
+export type SmokeResult = {
+  leaks: number;
+  runs: { tool: string; ok: boolean; code?: string }[];
+  participantsStatus: Record<string, string>;
+};
 
 /** Display words the server inserts itself (all label languages) – never sensitive, kept readable in structures. */
 const DISPLAY_WORDS =
@@ -27,7 +31,7 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
   /** Text + structured data, WITHOUT file/image content (which is unredacted by definition). */
   function outputOf(res: CallToolResult): string {
     const parts = res.content.map((c) => (c.type === "text" ? c.text : `[${c.type}]`));
-    return parts.join("\n") + "\n" + JSON.stringify(res.structuredContent ?? {});
+    return `${parts.join("\n")}\n${JSON.stringify(res.structuredContent ?? {})}`;
   }
 
   async function call(tool: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown> | undefined> {
@@ -35,7 +39,14 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     const res = (await client.callTool({ name: tool, arguments: args })) as CallToolResult;
     const data = res.structuredContent as Record<string, unknown> | undefined;
     const code = res.isError ? ((data?.error as { code?: string })?.code ?? "ERROR") : undefined;
-    const run: Run = { tool: `${tool} ${Object.keys(args).length ? JSON.stringify(Object.keys(args)) : ""}`.trim(), ok: !res.isError, code, ms: Math.round(performance.now() - t0), output: outputOf(res), data };
+    const run: Run = {
+      tool: `${tool} ${Object.keys(args).length ? JSON.stringify(Object.keys(args)) : ""}`.trim(),
+      ok: !res.isError,
+      code,
+      ms: Math.round(performance.now() - t0),
+      output: outputOf(res),
+      data,
+    };
     runs.push(run);
     out(`${run.ok ? "✅" : "⚠️ "} ${run.tool.padEnd(52)} ${String(run.ms).padStart(5)} ms${code ? `  ${code}` : ""}`);
     return res.isError ? undefined : data;
@@ -57,11 +68,14 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
   await call("itslearning_list_news", { limit: 20 });
 
   const courseForBulletins = courses.find((c) => c.newBulletins > 0) ?? courses[0];
-  const bulletins = courseForBulletins ? arr((await call("itslearning_list_bulletins", { courseId: courseForBulletins.courseId, limit: 10 }))?.bulletins) : [];
+  const bulletins = courseForBulletins
+    ? arr((await call("itslearning_list_bulletins", { courseId: courseForBulletins.courseId, limit: 10 }))?.bulletins)
+    : [];
 
   const threads = arr((await call("itslearning_list_message_threads", { limit: 20 }))?.threads);
   const threadMsgs: Obj[] = [];
-  for (const t of threads.slice(0, 3)) threadMsgs.push(...arr((await call("itslearning_get_message_thread", { threadId: t.threadId, limit: 30 }))?.messages));
+  for (const t of threads.slice(0, 3))
+    threadMsgs.push(...arr((await call("itslearning_get_message_thread", { threadId: t.threadId, limit: 30 }))?.messages));
 
   // Find a course with files (try at most 4 courses)
   let courseFiles: Obj[] = [];
@@ -93,12 +107,14 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     for (const k of ["first", "last", "full"] as const) if (n[k]?.trim()) r[k] = n[k]!.trim();
     names.set(id, r);
   };
-  const addPub = (p?: ApiPublishedBy | null) => p && add(p.PersonId, { first: p.FirstName ?? undefined, last: p.LastName ?? undefined, full: p.FullName ?? undefined });
+  const addPub = (p?: ApiPublishedBy | null) =>
+    p && add(p.PersonId, { first: p.FirstName ?? undefined, last: p.LastName ?? undefined, full: p.FullName ?? undefined });
 
   const me = await ctx.it.person();
   add(me.PersonId, { first: me.FirstName ?? undefined, last: me.LastName ?? undefined, full: me.FullName ?? undefined });
   for (const t of (await ctx.it.messageThreads(100)).Threads?.EntityArray ?? []) {
-    for (const p of t.Participants ?? []) add(p.PersonId, { first: p.FirstName ?? undefined, last: p.LastName ?? undefined, full: p.FullName ?? undefined });
+    for (const p of t.Participants ?? [])
+      add(p.PersonId, { first: p.FirstName ?? undefined, last: p.LastName ?? undefined, full: p.FullName ?? undefined });
     if (t.LastMessage) add(t.LastMessage.CreatedBy, { full: t.LastMessage.CreatedByName ?? undefined });
   }
   for (const n of (await ctx.it.notificationStream(0, 50)).EntityArray ?? []) {
@@ -150,10 +166,11 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     }
   }
   let ambiguous = 0;
-  for (const k of [...forbidden.keys()]) if (allowed.has(k)) {
-    forbidden.delete(k);
-    ambiguous++;
-  }
+  for (const k of [...forbidden.keys()])
+    if (allowed.has(k)) {
+      forbidden.delete(k);
+      ambiguous++;
+    }
 
   const SECRET_PATTERNS: [string, RegExp][] = [
     ["token parameter", /[?&](Token|Signature|sign|Hash|ApiSessionId)=/i],
@@ -174,7 +191,9 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     t
       .replace(/\s+/g, " ")
       .split(/( )/)
-      .map((w) => (DISPLAY_WORDS.test(w.replace(/[^\p{L}:]/gu, "")) ? w.replace(/\p{N}/gu, "9") : w.replace(/\p{L}/gu, "x").replace(/\p{N}/gu, "9")))
+      .map((w) =>
+        DISPLAY_WORDS.test(w.replace(/[^\p{L}:]/gu, "")) ? w.replace(/\p{N}/gu, "9") : w.replace(/\p{L}/gu, "x").replace(/\p{N}/gu, "9"),
+      )
       .join("");
   const around = (text: string, i: number, len: number, middle: string) =>
     shape(text.slice(Math.max(0, i - 40), i)) + middle + shape(text.slice(i + len, i + len + 40));
@@ -196,8 +215,11 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     for (const [label, re] of SECRET_PATTERNS) {
       if (!re.test(run.output)) continue;
       hits.set(label, new Set(["(pattern)"]));
-      const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
-      structures.set(label, [...run.output.matchAll(g)].slice(0, 3).map((m) => around(run.output, m.index ?? 0, m[0].length, m[0].replace(/\p{N}/gu, "9"))));
+      const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
+      structures.set(
+        label,
+        [...run.output.matchAll(g)].slice(0, 3).map((m) => around(run.output, m.index ?? 0, m[0].length, m[0].replace(/\p{N}/gu, "9"))),
+      );
     }
     if (!hits.size) continue;
     leaks += [...hits.values()].reduce((n, s) => n + s.size, 0);
@@ -224,7 +246,11 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     Downloads tested:    ${fileRefs.size}
     Names checked:       ${forbidden.size} terms from ${names.size} people (${ambiguous} ambiguous skipped)
     Roles detected:      ${roles.teacher} teachers, ${roles.student} students, ${roles.unknown} unknown
-    Participant lists:   ${Object.entries(participantsStatus).map(([k, v]) => `${k}: ${v}`).join(" · ") || "not checked"}
+    Participant lists:   ${
+      Object.entries(participantsStatus)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(" · ") || "not checked"
+    }
     Result:              ${leaks ? `❌ ${leaks} possible leak(s)` : "✅ no leaks found"}`);
 
   return { leaks, runs, participantsStatus };

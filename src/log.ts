@@ -29,7 +29,7 @@ export function scrub(s: string): string {
 function write(level: LogLevel, msg: string, fields?: Record<string, unknown>) {
   if (LEVELS[level] < minLevel) return;
   const line = JSON.stringify({ t: new Date().toISOString(), level, msg, ...fields });
-  process.stderr.write(scrub(line) + "\n");
+  process.stderr.write(`${scrub(line)}\n`);
 }
 
 export const log = {

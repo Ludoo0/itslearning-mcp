@@ -99,7 +99,10 @@ export async function listNews(ctx: AppContext, args: ListNewsArgs) {
     registerPublishedBy(ctx.redactor.people, n.LightBulletin?.PublishedBy, "teacher-weak");
   }
   const page = collected.slice(0, limit);
-  await warmCourses(ctx, page.map((n) => (/course/i.test(n.LocationType ?? "") ? n.LocationId : undefined)));
+  await warmCourses(
+    ctx,
+    page.map((n) => (/course/i.test(n.LocationType ?? "") ? n.LocationId : undefined)),
+  );
   return { items: page.map((n) => toNewsItem(ctx, n)), hasMore: collected.length > limit || !exhausted };
 }
 

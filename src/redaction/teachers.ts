@@ -14,7 +14,8 @@ export type TeacherEntry = { id: string; lastName: string; salutation: string };
 type FileEntry = { id?: unknown; lastName?: unknown; salutation?: unknown; anrede?: unknown };
 type FileShape = { _hint?: string; teachers: FileEntry[] };
 
-const HINT = 'Set "salutation" (e.g. "Mrs", "Mr", "Frau", "Herr") or leave it empty → "Teacher <last name>". Changes apply without restart.';
+const HINT =
+  'Set "salutation" (e.g. "Mrs", "Mr", "Frau", "Herr") or leave it empty → "Teacher <last name>". Changes apply without restart.';
 const RELOAD_CHECK_MS = 2_000;
 
 export class TeacherDirectory {
@@ -116,7 +117,7 @@ export class TeacherDirectory {
     try {
       mkdirSync(dirname(this.path), { recursive: true });
       const tmp = `${this.path}.tmp`;
-      writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+      writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
       renameSync(tmp, this.path);
       this.mtimeMs = statSync(this.path).mtimeMs;
       this.needsMigration = false;

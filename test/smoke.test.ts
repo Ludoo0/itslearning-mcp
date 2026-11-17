@@ -40,7 +40,7 @@ describe("smoke test (logic, against fake data)", () => {
   test("--details shows only the structure (x/9) for pattern hits, no content", async () => {
     const ctx = await fakeContext();
     const orig = ctx.redactor.text.bind(ctx.redactor);
-    ctx.redactor.text = (s, max) => orig(s, max) + " profile id PersonId=4711 of Mia";
+    ctx.redactor.text = (s, max) => `${orig(s, max)} profile id PersonId=4711 of Mia`;
     const res = await smoke(ctx);
     expect(res.output).toMatch(/structure: ….*PersonId=9999/);
     expect(res.output).not.toMatch(/4711|Mia|profile/);
@@ -49,7 +49,7 @@ describe("smoke test (logic, against fake data)", () => {
   test("name hits: structure with readable display words, the name only as ⟨hit⟩", async () => {
     const ctx = await fakeContext();
     const orig = ctx.redactor.text.bind(ctx.redactor);
-    ctx.redactor.text = (s, max) => orig(s, max) + " Greetings to Teacher Lindqvist and Sabine";
+    ctx.redactor.text = (s, max) => `${orig(s, max)} Greetings to Teacher Lindqvist and Sabine`;
     const res = await smoke(ctx);
     expect(res.output).toMatch(/teacher: first name: 1 hit\(s\) \(s\*+\)/);
     expect(res.output).toMatch(/structure: ….*Teacher xxxxxxxxx xxx ⟨hit⟩/);
@@ -59,7 +59,7 @@ describe("smoke test (logic, against fake data)", () => {
   test("German display words stay readable too", async () => {
     const ctx = await fakeContext({}, { language: "de" });
     const orig = ctx.redactor.text.bind(ctx.redactor);
-    ctx.redactor.text = (s, max) => orig(s, max) + " Grüße an Lehrkraft Lindqvist und Sabine";
+    ctx.redactor.text = (s, max) => `${orig(s, max)} Grüße an Lehrkraft Lindqvist und Sabine`;
     const res = await smoke(ctx);
     expect(res.output).toMatch(/structure: ….*Lehrkraft xxxxxxxxx xxx ⟨hit⟩/);
   });

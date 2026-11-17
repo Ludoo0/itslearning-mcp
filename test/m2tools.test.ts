@@ -6,7 +6,7 @@ import { listBulletins } from "../src/tools/bulletins";
 import { getThread, listThreads } from "../src/tools/messages";
 import { listNews } from "../src/tools/news";
 import { overview } from "../src/tools/overview";
-import { FORBIDDEN_NAMES, P_STUDENT, P_TEACHER, P_UNKNOWN, fakeContext } from "./fixtures";
+import { FORBIDDEN_NAMES, fakeContext, P_STUDENT, P_TEACHER, P_UNKNOWN } from "./fixtures";
 
 describe("itslearning_list_news", () => {
   test("newest first, since filter, kinds, authors and redacted texts", async () => {
@@ -14,7 +14,13 @@ describe("itslearning_list_news", () => {
     const res = await listNews(ctx, { since: "2026-11-09" });
     expect(res.items.map((i) => i.id)).toEqual([8001, 8002]);
     const [bulletin, element] = res.items;
-    expect(bulletin).toMatchObject({ kind: "bulletin", bulletinId: 6001, images: [{ fileRef: "i_12_6001_0" }], courseId: 12, author: { display: "Teacher Lindqvist", role: "teacher" } });
+    expect(bulletin).toMatchObject({
+      kind: "bulletin",
+      bulletinId: 6001,
+      images: [{ fileRef: "i_12_6001_0" }],
+      courseId: 12,
+      author: { display: "Teacher Lindqvist", role: "teacher" },
+    });
     expect(bulletin!.text).toBe("Dear class, please hand in to Teacher Lindqvist. Questions: [email]");
     expect(element).toMatchObject({ kind: "element", elementId: 7001, fileRef: "e_7001", author: { role: "unknown" } });
     expect(element!.text).toMatch(/^New task: Fractions worksheet \(by Person-[0-9A-F]{4}\)$/);
@@ -31,7 +37,12 @@ describe("itslearning_list_bulletins", () => {
     const res = await listBulletins(await fakeContext(), { courseId: 12 });
     expect(res.total).toBe(2);
     const [b1, b2] = res.bulletins;
-    expect(b1).toMatchObject({ pinned: true, link: "https://example.org/info", images: [{ fileRef: "i_12_6001_0", name: "Image 1", kind: "image" }], commentsCount: 2 });
+    expect(b1).toMatchObject({
+      pinned: true,
+      link: "https://example.org/info",
+      images: [{ fileRef: "i_12_6001_0", name: "Image 1", kind: "image" }],
+      commentsCount: 2,
+    });
     expect(b1!.resources).toEqual([{ elementId: 7101, title: "Reading list", type: "LearningToolElement", fileRef: "e_7101" }]);
     expect(b2!.link).toBeUndefined();
     expect(b2!.text).toBe("See [itslearning link]");

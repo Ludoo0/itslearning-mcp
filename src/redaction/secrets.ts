@@ -5,7 +5,8 @@
 import { LABELS, type Labels } from "./labels";
 
 const ITSL_HOST_RE = /(^|\.)itslearning\.com$/i;
-const SECRET_PARAM_RE = /^(token|signature|hash|sign|apisessionid|guid|access_token|refresh_token|password|username|email|firstname|lastname|personid|userid)$/i;
+const SECRET_PARAM_RE =
+  /^(token|signature|hash|sign|apisessionid|guid|access_token|refresh_token|password|username|email|firstname|lastname|personid|userid)$/i;
 const URL_IN_TEXT_RE = /\b(?:https?|webcal):\/\/[^\s<>"'`)\]]+/gi;
 
 export function isItslearningUrl(url: string): boolean {
@@ -111,7 +112,7 @@ export function redactUrlForLog(raw: string, base?: string): string {
   if (!ITSL_HOST_RE.test(u.hostname)) return "{external-url}";
   const path = u.pathname.split("/").map(redactSegment).join("/");
   const keys = [...new Set(u.searchParams.keys())];
-  const qs = keys.length ? "?" + keys.map((k) => `${k}={${/^\d+$/.test(u.searchParams.get(k) ?? "") ? "n" : "v"}}`).join("&") : "";
+  const qs = keys.length ? `?${keys.map((k) => `${k}={${/^\d+$/.test(u.searchParams.get(k) ?? "") ? "n" : "v"}}`).join("&")}` : "";
   return `${u.protocol}//${u.host}${path}${qs}`;
 }
 

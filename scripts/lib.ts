@@ -18,6 +18,7 @@ export const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) itslearning-mcp-pro
 // ---------- Terminal input ----------
 
 import { readHidden, readLine } from "../src/cli/prompt";
+
 export { readHidden, readLine };
 
 export async function promptCredentials(): Promise<{ username: string; password: string }> {
@@ -51,11 +52,9 @@ async function tokenRequest(params: Record<string, string>): Promise<TokenRespon
   return json;
 }
 
-export const loginWithPassword = (username: string, password: string) =>
-  tokenRequest({ grant_type: "password", username, password });
+export const loginWithPassword = (username: string, password: string) => tokenRequest({ grant_type: "password", username, password });
 
-export const refreshToken = (refresh_token: string) =>
-  tokenRequest({ grant_type: "refresh_token", refresh_token });
+export const refreshToken = (refresh_token: string) => tokenRequest({ grant_type: "refresh_token", refresh_token });
 
 // ---------- API client with auto refresh ----------
 
