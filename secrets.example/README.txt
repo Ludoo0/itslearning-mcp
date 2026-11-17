@@ -1,25 +1,30 @@
-Docker-Secrets für compose.yaml
+Docker secrets for compose.yaml
 ===============================
 
-1. Ordner kopieren (secrets/ ist von Git ausgeschlossen):
-     PowerShell:  Copy-Item -Recurse secrets.example secrets
+1. Copy this folder (secrets/ is ignored by git and by the Docker build):
      Bash:        cp -r secrets.example secrets
-   (README.txt in secrets/ darf liegen bleiben oder gelöscht werden.)
+     PowerShell:  Copy-Item -Recurse secrets.example secrets
+   (README.txt may stay in secrets/ or be deleted.)
 
-2. In secrets/ die drei Dateien mit echten Werten füllen – jeweils nur der Wert, eine Zeile:
-     itsl_username   itslearning-Benutzername
-     itsl_password   itslearning-Passwort
-     mcp_api_key     zufälliger API-Key (mind. 32 Zeichen), den MCP-Clients als
-                     "Authorization: Bearer <key>" senden
+2. Fill the three files in secrets/ with real values – just the value, one line each:
+     itsl_username   itslearning user name
+     itsl_password   itslearning password
+     mcp_api_key     random API key (at least 32 characters) that MCP clients send
+                     as "Authorization: Bearer <key>"
 
-   API-Key erzeugen:
+   Generate an API key:
+     openssl rand -hex 32
+   or
      bun -e "console.log(crypto.randomUUID().replaceAll('-','') + crypto.randomUUID().replaceAll('-',''))"
 
-3. Starten:
-     ITSL_BASE_URL=https://meineschule.itslearning.com docker compose up -d --build
-   (PowerShell: $env:ITSL_BASE_URL="https://meineschule.itslearning.com"; docker compose up -d --build)
+   The placeholder in mcp_api_key is deliberately too short – the server refuses to start until it is replaced.
 
-Hinweis Linux-Host: Compose bindet die Secret-Dateien mit den Rechten des Hosts ein.
-Der Server läuft im Container als User "bun" (UID 1000) – die Dateien müssen für ihn lesbar sein:
+3. Start:
+     ITSL_BASE_URL=https://yourschool.itslearning.com docker compose up -d
+   (PowerShell: $env:ITSL_BASE_URL="https://yourschool.itslearning.com"; docker compose up -d)
+   Add --build to build the image locally instead of pulling it from GHCR.
+
+Linux hosts: Compose mounts the secret files with the host's permissions.
+The server runs as user "bun" (UID 1000) inside the container – the files must be readable for it:
      chmod 600 secrets/* && sudo chown 1000:1000 secrets/*
-(Unter Docker Desktop für Windows/macOS ist nichts zu tun.)
+(Nothing to do with Docker Desktop on Windows/macOS.)

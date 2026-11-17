@@ -1,65 +1,65 @@
-# itslearning-mcp – Kontext für Agenten
+# itslearning-mcp – context for agents
 
-Lesender MCP-Server für **itslearning** (Lernplattform von Schulen), damit KI-Agenten Aufgaben, Neuigkeiten, Nachrichten und Dateien eines Schülerkontos lesen können – mit **Schwärzung personenbezogener Daten**. Allgemein nutzbar für jede itslearning-Instanz mit nativem Login (`ITSL_BASE_URL`).
+Read-only MCP server for **itslearning** (a learning platform used by schools) that lets AI agents read the tasks, news, messages and files of a student account – with **redaction of personal data**. Works with any itslearning instance that offers native login (`ITSL_BASE_URL`).
 
-- **Aktueller Stand und nächste Aufgaben:** [`docs/next-steps.md`](docs/next-steps.md) – zuerst lesen.
-- Spezifikation: [`docs/mcp-server-spec.md`](docs/mcp-server-spec.md)
-- Verifizierte API-Erkenntnisse (Endpunkte, Auth, Download-Flows): [`docs/itslearning-api.md`](docs/itslearning-api.md)
-- Bedienung/Betrieb: [`README.md`](README.md)
+- **Open items:** [`docs/roadmap.md`](docs/roadmap.md)
+- Specification (as built): [`docs/mcp-server-spec.md`](docs/mcp-server-spec.md)
+- Verified API findings (endpoints, auth, download flows): [`docs/itslearning-api.md`](docs/itslearning-api.md)
+- Usage/operation: [`README.md`](README.md) · Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md) · Security: [`SECURITY.md`](SECURITY.md)
 
-Sprache im Projekt: **Deutsch** (Doku, Kommentare, Tool-Beschreibungen, Fehlermeldungen). Commit-Messages auf Englisch.
+Project language: **English** (code, comments, docs, tool descriptions, error messages, commit messages). Redaction labels exist in `en` (default) and `de`.
 
-## Datenschutz – harte Regeln
+## Privacy – hard rules
 
-Das Projekt wurde für das Konto eines Kindes an einer konkreten Schule gebaut. Das Repo (privat auf GitHub) soll trotzdem **keinen Hinweis auf die Schule** enthalten.
+This project was developed and tested against a real student account. **Never commit anything identifying an instance, school, person or course.**
 
-- **Nie ins Repo:** Name, Ort, Instanz-URL oder Customer-ID der Schule; echte Namen, Kurstitel, Element-/Personen-IDs aus dem Konto; Inhalte aus `probe-output/`, `.data/`, `downloads/`, `secrets/`, `.env` (alle gitignored).
-- Vor jedem Commit den Staged-Diff durchsuchen, z. B. `git diff --cached | grep -nE '<instanz>|<schulname>|<ort>|<customerId>'` (konkrete Begriffe stehen in der lokalen `.env` bzw. sind dem Nutzer bekannt – nicht hier eintragen).
-- **Testdaten sind erfunden** (`test/fixtures.ts`, `test/fakeWeb.ts`: „Jonas Beispielmann“, „Sabine Lindqvist“ …). Keine echten Daten in Tests.
-- **Bun lädt `.env` automatisch** – darin stehen echte Zugangsdaten. Wer Server/Skripte lokal zum Testen startet, ohne das echte Konto zu nutzen, muss `ITSL_BASE_URL`/`ITSL_USERNAME`/`ITSL_PASSWORD` explizit mit Dummy-Werten überschreiben (z. B. `ITSL_BASE_URL=https://example.itslearning.com`) und ein eigenes `DATA_DIR` im Scratchpad setzen. Gegen das echte Konto testet der Nutzer selbst (`bun run call …`, `bun run smoke`) oder über den eingebundenen MCP-Server.
-- Ausgaben, die geteilt werden sollen (Reports, Smoke-Test), enthalten nur **Struktur/Zählungen**, nie Inhalte – siehe `scripts/smokeCore.ts` (Maskierung `x`/`9`).
-- Wenn echte (geschwärzte) Daten über die MCP-Tools in den Chat kommen: im Bericht nur Muster beschreiben, keine Namen/Kurstitel in Dateien übernehmen.
+- **Never in the repository:** instance URLs, school names or locations, customer IDs; real names, course titles, element/person IDs from any account; content of `probe-output/`, `.data/`, `downloads/`, `secrets/`, `.env` (all gitignored).
+- Before every commit, search the staged diff for identifying terms (`git diff --cached | grep -nE '<instance>|<school>|<city>|<customerId>'` – the maintainer knows the concrete terms; do not write them down here).
+- **Test data is fictional** (`test/fixtures.ts`, `test/fakeWeb.ts`: "Jonas Beispielmann", "Sabine Lindqvist", …). Never put real data into tests.
+- **Bun loads `.env` automatically** – a developer's `.env` may contain real credentials. When starting the server or scripts locally without intending to use the real account, explicitly override `ITSL_BASE_URL`/`ITSL_USERNAME`/`ITSL_PASSWORD` with dummy values (e.g. `ITSL_BASE_URL=https://example.itslearning.com`) and point `DATA_DIR` to a scratch directory. Tests against a real account are run by the maintainer (`bun run call …`, `bun run smoke`) or via the connected MCP server.
+- Output meant to be shared (reports, smoke test) contains **structure/counts only**, never content – see `scripts/smokeCore.ts` (masking `x`/`9`).
+- When real (redacted) data reaches the chat through the MCP tools: describe patterns only in reports, never copy names/course titles into files.
 
-## Architektur (kurz)
+## Architecture (short)
 
-Bun + TypeScript (strict) + `@modelcontextprotocol/sdk` + `zod`. Kein Build-Schritt; `bun src/server.ts`.
+Bun + TypeScript (strict) + `@modelcontextprotocol/sdk` + `zod`. No build step; `bun src/server.ts`.
 
-| Pfad | Inhalt |
+| Path | Content |
 |---|---|
-| `src/server.ts` | Einstieg; `MCP_TRANSPORT=stdio` (Default) oder `http` |
-| `src/http.ts` | Streamable HTTP auf `Bun.serve`, zustandslos (pro Request neuer `McpServer` über gemeinsamem Kontext), Bearer-API-Key, `/healthz`, Origin-Check |
-| `src/app.ts` | Verdrahtung (`createApp`), Server-Instructions, Tool-Registrierung |
-| `src/context.ts` | `AppContext`, `ensureReady()` (Login, eigenes Konto als „Ich“, Namens-Wörterbuch mit Thread-Teilnehmer:innen vorwärmen) |
-| `src/auth/` | OAuth2 Password-Grant mit Client-ID der Mobile-App, **rotierender Refresh-Token** → `DATA_DIR/state.json`; falsches Passwort = fatal (kein Retry, Konto-Sperre vermeiden) |
-| `src/api/` | REST-Client (Limiter, TTL-Cache, Retry), typisierte Endpunkte |
-| `src/redaction/` | Personen-Registry (Rollen, HMAC-Pseudonyme), `teachers.json` (Anrede, Hot-Reload), Namens-Wörterbuch, Geheimnis-/URL-Filter, HTML→Text |
-| `src/files/`, `src/websession/` | fileRefs (`e_`/`a_`/`m_`/`i_`, zustandslos), Download-Flows (SSO → Web-Session → iframes → `DownloadRedirect`), Textextraktion (unpdf, mammoth), Disk-Cache |
-| `src/tools/` | Ein Modul pro Tool-Gruppe; DTOs sind **Allowlists** (nie Roh-API-Antworten durchreichen) |
-| `scripts/` | `call.ts` (Tool gegen echte Instanz aufrufen), `smoke.ts`/`smokeCore.ts` (Leak-Prüfung), `probe*.ts` (API-Erkundung) |
+| `src/server.ts` | Entry point; `MCP_TRANSPORT=stdio` (default) or `http` |
+| `src/http.ts` | Streamable HTTP on `Bun.serve`, stateless (fresh `McpServer` per request on a shared context), bearer API key, `/healthz`, origin check |
+| `src/app.ts` | Wiring (`createApp`), server instructions, tool registration |
+| `src/context.ts` | `AppContext`, `ensureReady()` (login, own account as "Me", warm up the name dictionary with thread participants) |
+| `src/auth/` | OAuth2 password grant with the mobile app's client ID, **rotating refresh token** → `DATA_DIR/state.json`; wrong password = fatal (no retry, avoid account lockout) |
+| `src/api/` | REST client (limiter, TTL cache, retries), typed endpoints |
+| `src/redaction/` | Person registry (roles, HMAC pseudonyms), labels (`labels.ts`, en/de), `teachers.json` (salutation, hot reload), name dictionary, secret/URL filters, HTML → text |
+| `src/files/`, `src/websession/` | fileRefs (`e_`/`a_`/`m_`/`i_`, stateless), download flows (SSO → web session → iframes → `DownloadRedirect`), text extraction (unpdf, mammoth), disk cache |
+| `src/tools/` | One module per tool group; DTOs are **allowlists** (never pass raw API responses through) |
+| `scripts/` | `call.ts` (call a tool against a real instance), `smoke.ts`/`smokeCore.ts` (leak check), `probe*.ts` (API exploration) |
 
-### Wichtige Invarianten
-- **Erst Personen registrieren, dann Texte schwärzen** (`registerThread`, `registerPublishedBy`, `warmCourse`/`warmForFileRef` in `src/tools/people.ts`).
-- Jeder Freitext läuft durch `ctx.redactor.text()` bzw. `.title()`; Dateinamen durch `redactFileName()`.
-- Geheime URLs (Tokens, SSO-, Session-, filerepository-/filecache-Links) verlassen nie `FileService`/`websession` und werden nicht geloggt (Logger schwärzt registrierte Secrets und URLs).
-- Externe Links nur, wenn `isShareableUrl()` (prüft Host, Parameter-Namen **und -Werte**).
-- Logs nach stderr (stdout gehört bei stdio dem MCP-Protokoll), keine Inhalte loggen.
-- Claude Code zeigt bei Tools mit `structuredContent` offenbar nur diese an → alles, was der Agent sehen muss, gehört in `structuredContent` (siehe `docs/next-steps.md` 1.1).
+### Invariants
+- **Register people first, then redact text** (`registerThread`, `registerPublishedBy`, `warmCourse`/`warmForFileRef` in `src/tools/people.ts`).
+- Every free text goes through `ctx.redactor.text()` or `.title()`; file names through `redactFileName()`.
+- Secret URLs (tokens, SSO/session URLs, filerepository/filecache links) never leave `FileService`/`websession` and are never logged (the logger scrubs registered secrets and URLs).
+- External links only if `isShareableUrl()` (checks host, parameter names **and values**).
+- Logs go to stderr (stdout belongs to the MCP protocol with stdio); never log content.
+- Some clients (Claude Code) only show `structuredContent` of a tool result → everything the agent must see belongs in `structuredContent`.
 
-## Befehle
+## Commands
 
 ```bash
 bun install
 bun run typecheck
-bun test                         # ~100 Tests, keine echten Daten, kein Netzwerk
-bun run call [tool] [key=value…] # Tool gegen echte Instanz (nutzt .env bzw. fragt ab)
-bun run smoke --details          # Leak-Prüfung gegen echte Instanz, Ausgabe teilbar
-docker compose up -d --build     # HTTP-Server auf 127.0.0.1:3000 (Secrets in ./secrets/)
+bun test                         # unit/integration tests, fake data only, no network
+bun run call [tool] [key=value…] # call a tool against a real instance (uses .env or prompts)
+bun run smoke --details          # leak check against a real instance, output is shareable
+docker compose up -d --build     # HTTP server on 127.0.0.1:3000 (secrets in ./secrets/)
 ```
 
-Der Server ist in Claude Code für dieses Projekt als MCP-Server `itslearning` (HTTP, Docker) eingetragen. Nach Code-Änderungen muss der Nutzer den Container neu bauen, damit der eingebundene Server sie hat.
+The maintainer has the server connected in Claude Code as MCP server `itslearning` (HTTP, Docker). After code changes the container must be rebuilt for the connected server to pick them up.
 
-## Arbeitsweise mit dem Nutzer
+## Working with the maintainer
 
-- Commits/Push/Git-Schreibvorgänge nur nach ausdrücklicher Zustimmung (globale Regeln in `~/.claude/CLAUDE.md`). Hauptbranch heißt **`master`**; Remote `origin` = privates GitHub-Repo.
-- Echte Tests (Login, Smoke-Test) führt der Nutzer in seinem eigenen Terminal aus und schickt die (teilbare) Ausgabe.
-- Bei jedem Fund einer Schwärzungslücke: Ursache mit Struktur-Diagnose nachstellen, Regressionstest mit erfundenen Daten schreiben, dann fixen.
+- Commits, pushes and any other git/GitHub write operation only after explicit approval (global rules in `~/.claude/CLAUDE.md`). The main branch is **`master`**; remote `origin` = GitHub repository.
+- Real-account tests (login, smoke test) are run by the maintainer in their own terminal; they share the (shareable) output.
+- For every redaction gap found: reproduce the cause with a structure-only diagnosis, write a regression test with fictional data, then fix.

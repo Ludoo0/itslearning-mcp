@@ -1,18 +1,29 @@
-# Start:  ITSL_BASE_URL=https://meineschule.itslearning.com docker compose up -d --build
-# Vorher: secrets/ aus secrets.example/ anlegen (siehe secrets.example/README.txt)
+# itslearning-mcp – Streamable HTTP on 127.0.0.1:3000
+#
+# Before the first start: create secrets/ from secrets.example/ (see secrets.example/README.txt).
+#
+# Prebuilt image from GHCR:
+#   ITSL_BASE_URL=https://yourschool.itslearning.com docker compose pull && docker compose up -d
+# Build locally instead:
+#   ITSL_BASE_URL=https://yourschool.itslearning.com docker compose up -d --build
+#
+# ITSL_BASE_URL can also be set in a .env file next to this file.
+# Pin a version with ITSLEARNING_MCP_VERSION=0.1.0 (default: latest).
 services:
   itslearning-mcp:
+    image: ghcr.io/ludoo0/itslearning-mcp:${ITSLEARNING_MCP_VERSION:-latest}
     build: .
-    image: itslearning-mcp:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"   # nur lokal erreichbar; für Zugriff von außen Reverse-Proxy mit TLS davor
+      - "127.0.0.1:3000:3000"   # localhost only; put a TLS reverse proxy in front for remote access
     environment:
-      ITSL_BASE_URL: ${ITSL_BASE_URL:?ITSL_BASE_URL setzen, z. B. https://meineschule.itslearning.com}
+      ITSL_BASE_URL: ${ITSL_BASE_URL:?set ITSL_BASE_URL, e.g. https://yourschool.itslearning.com}
       ITSL_USERNAME_FILE: /run/secrets/itsl_username
       ITSL_PASSWORD_FILE: /run/secrets/itsl_password
       MCP_API_KEY_FILE: /run/secrets/mcp_api_key
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      REDACTION_LANGUAGE: ${REDACTION_LANGUAGE:-en}
+      REDACTION_KEEP_WORDS: ${REDACTION_KEEP_WORDS:-}
       # REDACT_TEACHERS: "true"
     secrets: [itsl_username, itsl_password, mcp_api_key]
     volumes:

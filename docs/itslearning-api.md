@@ -1,35 +1,35 @@
-# itslearning REST-API – Erkenntnisse für den MCP-Server
+# itslearning REST API – findings for the MCP server
 
-Stand: 2026-11-16 · Referenzinstanz: eine Schule auf `https://<schule>.itslearning.com` (itslearning v2026.11)
-Quelle: öffentliche API-Doku unter `/restapi/help` + drei Probe-Läufe mit einem **Schülerkonto** (`scripts/probe.ts`, `scripts/probe2.ts`).
+As of 2026-11-16 · Reference instance: a school on `https://<instance>.itslearning.com` (itslearning v2026.11)
+Sources: the public API help pages at `/restapi/help` plus three probe runs with a **student account** (`scripts/probe.ts`, `scripts/probe2.ts`).
 
-> Diese Doku enthält bewusst keine Inhalte, Namen oder IDs aus dem Konto – nur Strukturen.
-> Spezifikation des darauf aufbauenden Servers: [`mcp-server-spec.md`](./mcp-server-spec.md)
+> This document deliberately contains no content, names or IDs from the account – only structures.
+> Specification of the server built on top of it: [`mcp-server-spec.md`](./mcp-server-spec.md)
 
 ## TL;DR
 
-| Use Case | Machbar? | Wichtigster Endpunkt |
+| Use case | Feasible? | Main endpoint |
 |---|---|---|
-| Aufgaben lesen | ✅ | `GET /restapi/personal/tasks/v1` (+ `/assignments/{elementId}/v1` für Details) |
-| Neuigkeiten lesen | ✅ | `GET /restapi/personal/notifications/stream/v2?showLightBulletins=true` |
-| Kurs-News (Bulletins) | ✅ | `GET /restapi/personal/courses/{courseId}/bulletins/v1` |
-| Nachrichten lesen | ✅ | `GET /restapi/personal/instantmessages/messagethreads/v4` |
-| Kurs-Ressourcen listen | ✅ | `GET /restapi/personal/courses/{courseId}/resources/v1` |
-| Dateien herunterladen | ✅ | Nachrichten-Anhänge/Bilder: tokenisierte `filerepository`-URL direkt; Kurs-Dateien: SSO-URL → Web-Session → `DownloadRedirect.ashx` (verifiziert mit PDF) |
-| Kalender | ⚠️ leer | API und iCal-Feed liefern 0 Termine – Schule nutzt den Kalender nicht |
+| Read tasks | ✅ | `GET /restapi/personal/tasks/v1` (+ `/assignments/{elementId}/v1` for details) |
+| Read news | ✅ | `GET /restapi/personal/notifications/stream/v2?showLightBulletins=true` |
+| Course announcements (bulletins) | ✅ | `GET /restapi/personal/courses/{courseId}/bulletins/v1` |
+| Read messages | ✅ | `GET /restapi/personal/instantmessages/messagethreads/v4` |
+| List course resources | ✅ | `GET /restapi/personal/courses/{courseId}/resources/v1` |
+| Download files | ✅ | Message attachments/images: tokenized `filerepository` URL directly; course files: SSO URL → web session → `DownloadRedirect.ashx` (verified with a PDF) |
+| Calendar | ⚠️ empty | API and iCal feed return 0 events – the reference instance does not use the calendar |
 
-## Allgemeines
+## General
 
-- **API-Doku:** `https://<schule>.itslearning.com/restapi/help` (öffentlich, ASP.NET Web API Help Page, ~220 GET-Endpunkte). Nicht alle dokumentierten Endpunkte sind deployt (siehe „Funktioniert nicht“).
-- **Base-URL:** Instanz-Host + `/restapi/personal/...`
-- **Format:** JSON. Listen kommen meist als `{ EntityArray: [...], Total, CurrentPageIndex, PageSize }`, teils **eine Ebene verschachtelt** (`{ Resources: { EntityArray } }`, `{ Threads: { EntityArray }, HasMore }`).
-- **Paging:** `PageIndex` (0-basiert) + `PageSize`. Groß-/Kleinschreibung der Parameter variiert je Endpunkt (`pageSize` bei Messages v4).
-- **Auth-Header:** `Authorization: Bearer <access_token>` funktioniert überall (Fallback `?access_token=` war nie nötig).
-- **Fehler:** 401 ohne/mit abgelaufenem Token, 403 mit Klartext-Meldung (enthält IDs!), 404 als HTML-Fehlerseite bei unbekannten Routen.
+- **API docs:** `https://<instance>.itslearning.com/restapi/help` (public ASP.NET Web API help page, ~220 GET endpoints). Not every documented endpoint is deployed (see "Not working").
+- **Base URL:** instance host + `/restapi/personal/...`
+- **Format:** JSON. Lists usually come as `{ EntityArray: [...], Total, CurrentPageIndex, PageSize }`, sometimes **nested one level** (`{ Resources: { EntityArray } }`, `{ Threads: { EntityArray }, HasMore }`).
+- **Paging:** `PageIndex` (0-based) + `PageSize`. Parameter casing varies per endpoint (`pageSize` for messages v4).
+- **Auth header:** `Authorization: Bearer <access_token>` works everywhere (the `?access_token=` fallback was never needed).
+- **Errors:** 401 without/with an expired token, 403 with a plain-text message (contains IDs!), 404 as an HTML error page for unknown routes.
 
-## Authentifizierung
+## Authentication
 
-Login über OAuth2 Resource Owner Password Grant mit der öffentlichen Client-ID der offiziellen Mobile-App:
+Login uses the OAuth2 Resource Owner Password Grant with the public client ID of the official mobile app:
 
 ```http
 POST /restapi/oauth2/token
@@ -44,207 +44,209 @@ Refresh:
 grant_type=refresh_token&client_id=10ae9d30-1853-48ff-81cb-47b58a325685&refresh_token=…
 ```
 
-Beobachtet:
+Observed:
 
-| Eigenschaft | Wert |
+| Property | Value |
 |---|---|
 | `token_type` | `Bearer` |
-| `expires_in` | **300 s** (auch nach Refresh) |
-| Refresh-Token | ja, **rotiert bei jedem Refresh** |
-| Falsche Zugangsdaten | `401 {"ErrorCode":"InvalidUser"}` |
-| Login-Seite | nur nativer Login, kein SSO (Microsoft/Google/IServ) → Password Grant funktioniert |
+| `expires_in` | **300 s** (also after refresh) |
+| Refresh token | yes, **rotates on every refresh** |
+| Wrong credentials | `401 {"ErrorCode":"InvalidUser"}` |
+| Unknown instance | `401 {"ErrorCode":"Customer does not exist or is disabled"}` |
+| Login page | native login only, no SSO (Microsoft/Google/…) → password grant works |
 
-**Konsequenzen für den Server:**
-- Access-Token proaktiv vor Ablauf (~30 s Puffer) erneuern.
-- Weil der Refresh-Token rotiert, muss der **neue** Refresh-Token nach jedem Refresh sofort persistiert werden (sonst ist die Session nach einem Neustart weg). Speicherung lokal, z. B. Windows Credential Manager / verschlüsselte Datei – nie im Repo.
-- Passwort nur beim Erst-Login abfragen, danach nur noch Refresh.
+**Consequences for the server:**
+- Refresh the access token proactively before it expires (~30 s margin).
+- Because the refresh token rotates, the **new** refresh token must be persisted right after every refresh (otherwise the session is lost on restart). Store locally – never in the repository.
+- Only use the password for the first login; afterwards refresh only.
 
-## Endpunkte nach Use Case
+## Endpoints by use case
 
 ### Person
 
-`GET /restapi/personal/person/v1` → Objekt mit `PersonId`, `FirstName`, `LastName`, `FullName`, `ProfileImageUrl`, `Language`, `TimeZoneId`, `Children[]`, Berechtigungs-Flags (`CanAccessMessageSystem`, `CanAccessCalendar`, `CanAccessCourses`, …) sowie **`iCalUrl` / `iCalFavoriteOnlyUrl`** (geheime `webcal://`-Feed-URLs mit `PersonId` + `Guid` → wie ein Passwort behandeln).
+`GET /restapi/personal/person/v1` → object with `PersonId`, `FirstName`, `LastName`, `FullName`, `ProfileImageUrl`, `Language`, `TimeZoneId`, `Children[]`, permission flags (`CanAccessMessageSystem`, `CanAccessCalendar`, `CanAccessCourses`, …) and **`iCalUrl` / `iCalFavoriteOnlyUrl`** (secret `webcal://` feed URLs containing `PersonId` + `Guid` → treat like a password).
 
-`Children` ist beim Schülerkonto leer; `/restapi/personal/children/v1` liefert 0 Einträge.
+`Children` is empty for a student account; `/restapi/personal/children/v1` returns 0 entries.
 
-### Kurse
+### Courses
 
-| Endpunkt | Ergebnis |
+| Endpoint | Result |
 |---|---|
-| `GET /courses/v1` | 33 Kurse |
-| `GET /courses/v2`, `/v3`, `/v4` | je 46 Kurse, identisches Schema |
-| `GET /courses/cards/starred/v1` | 25 (favorisierte Kurse) |
+| `GET /courses/v1` | 33 courses |
+| `GET /courses/v2`, `/v3`, `/v4` | 46 courses each, identical schema |
+| `GET /courses/cards/starred/v1` | 25 (starred courses) |
 | `GET /courses/{courseId}/v1` | `Code`, `CourseId`, `Title`, `CreatedDateTimeUtc`, `OrganisationId` |
-| `GET /courses/{courseId}/features/v2` | Navigationsbaum des Kurses (`Name`, `Url`, `Features[]`) |
+| `GET /courses/{courseId}/features/v2` | the course's navigation tree (`Name`, `Url`, `Features[]`) |
+| `GET /courses/{courseId}/participants/v1` | `PersonId`, `FullName`, `Role`, … – readable for a student account |
 
-Kurs-Felder (Liste): `CourseId`, `Title`, `Url`, `LastUpdatedUtc`, `NewNotificationsCount`, `NewBulletinsCount`, `HasStudentPermissions`, `HasAdminPermissions`, `CourseColor`, `CourseCode`, `CourseFocus`.
+Course fields (list): `CourseId`, `Title`, `Url`, `LastUpdatedUtc`, `NewNotificationsCount`, `NewBulletinsCount`, `HasStudentPermissions`, `HasAdminPermissions`, `CourseColor`, `CourseCode`, `CourseFocus`.
 
-**v1 vs. v2:** Die 13 Kurse, die nur in v2 auftauchen, haben alle `HasStudentPermissions = false` (alle v1-Kurse: `true`). Vermutlich ehemalige/archivierte Kurse oder Kurse mit anderer Rolle → **für den MCP `v1` nutzen** (= aktuelle Kurse als Schüler), v2 optional für „alle Kurse“.
+**v1 vs. v2:** the 13 courses that only appear in v2 all have `HasStudentPermissions = false` (all v1 courses: `true`). Most likely former/archived courses or courses with a different role → **the server uses `v1`** (= current courses as a student), v2 optionally for "all courses".
 
-### Aufgaben
+### Tasks
 
-`GET /restapi/personal/tasks/v1?PageSize=100` (optional `status`, `deadline`, `isHomework`) → 17 Einträge.
+`GET /restapi/personal/tasks/v1?PageSize=100` (optional `status`, `deadline`, `isHomework`) → 17 entries.
 
-Felder: `TaskId`, `Title`, `Description`, `Status`, `Deadline`, `Homework`, `LocationTitle` (= Kursname), `LocationType`, `LocationId`, `ElementId`, `ElementType`, `LearningToolId`, `Url`, `ContentUrl`, `IconUrl`.
+Fields: `TaskId`, `Title`, `Description`, `Status`, `Deadline`, `Homework`, `LocationTitle` (= course name), `LocationType`, `LocationId`, `ElementId`, `ElementType`, `LearningToolId`, `Url`, `ContentUrl`, `IconUrl`.
 
-- Gesehene `Status`-Werte: `NotStarted` (weitere zu erwarten).
-- Gesehene `ElementType`-Werte: `LearningToolElement` (normale Aufgabe), `CustomActivity`.
-- **Details:** `GET /restapi/personal/assignments/{elementId}/v1` funktioniert für `LearningToolElement`-Aufgaben. Liefert u. a. `Text`/`RawText` (Aufgabenstellung), `Deadline`, `IsHomework`, `IsMandatory`, `SubmissionType`, `CompletionMode`, `IsSubmissionAfterDeadlineAllowed`, `Files[]`, `FilesInCloud[]`, `TemplateFile`, `AnswerId`, `CanSubmitOrEditAnswer`, Bewertungsinfos.
-- Für `CustomActivity` liefert der Endpunkt **403** – hier bleibt nur `ContentUrl` (`/CustomActivity/CustomActivityOverview.aspx?CustomActivityId=…`) über die Web-Session.
-- Anhänge einer Aufgabe: `GET /assignments/{elementId}/files/{fileId}/v1` → laut Doku **302-Redirect** zur Datei. In den getesteten Aufgaben waren keine Dateien angehängt → noch unverifiziert.
-- Kurs-spezifisch: `GET /courses/{courseId}/tasks/v1`.
-- Alternative Ansicht: `GET /tasklistdailyworkflow/v1` → nach Abschnitten gruppiert (`SectionTitle`, darin `TaskDailyWorkflow.EntityArray` mit `CourseTitle`, `TaskTitle`, `Deadline`, `DeadlineDisplayTime`, `IsHomework`). Praktisch für „Was ist diese Woche fällig?“.
+- Observed `Status` values: `NotStarted` (more are to be expected). The list also contains old, never-completed tasks from previous school years.
+- Observed `ElementType` values: `LearningToolElement` (regular assignment), `CustomActivity`.
+- **Details:** `GET /restapi/personal/assignments/{elementId}/v1` works for many `LearningToolElement` tasks. Returns e.g. `Text`/`RawText` (assignment text), `Deadline`, `IsHomework`, `IsMandatory`, `SubmissionType`, `CompletionMode`, `IsSubmissionAfterDeadlineAllowed`, `Files[]`, `FilesInCloud[]`, `TemplateFile`, `AnswerId`, `CanSubmitOrEditAnswer`, assessment info.
+- For `CustomActivity` (and some other tools, e.g. polls/choices) the endpoint returns **403** – only the `ContentUrl` web page (via the web session) remains.
+- Task attachments: `GET /assignments/{elementId}/files/{fileId}/v1` → according to the docs a **302 redirect** to the file. None of the tested tasks had attachments → still unverified.
+- Course-specific: `GET /courses/{courseId}/tasks/v1`.
+- Alternative view: `GET /tasklistdailyworkflow/v1` → grouped into sections (`SectionTitle`, containing `TaskDailyWorkflow.EntityArray` with `CourseTitle`, `TaskTitle`, `Deadline`, `DeadlineDisplayTime`, `IsHomework`). Handy for "what is due this week?".
 
-### Neuigkeiten
+### News
 
-| Endpunkt | Inhalt |
+| Endpoint | Content |
 |---|---|
-| `GET /notifications/stream/v2?showLightBulletins=true&PageSize=…` | **Hauptfeed** (63 Einträge): Kurs-Ereignisse inkl. eingebetteter Light Bulletins |
-| `GET /notifications/newsfeed/v1` | ähnlicher Feed (63), schlankeres Schema (`NewsFeedItemId`, `Text`, `LocationTitle`, `PublishedDate`, `PublishedBy`, `Url`) |
-| `GET /notifications/v1`, `/v2` | nur 1 Eintrag (System-Benachrichtigungen) – kaum relevant |
-| `GET /notifications/{notificationId}/elements/v1` | Elemente einer Benachrichtigung (in der Stichprobe leer) |
-| `GET /courses/{courseId}/stream/v1?showLightBulletins=true` | Stream eines einzelnen Kurses |
+| `GET /notifications/stream/v2?showLightBulletins=true&PageSize=…` | **main feed** (63 entries): course events incl. embedded light bulletins |
+| `GET /notifications/newsfeed/v1` | similar feed (63), slimmer schema (`NewsFeedItemId`, `Text`, `LocationTitle`, `PublishedDate`, `PublishedBy`, `Url`) |
+| `GET /notifications/v1`, `/v2` | only 1 entry (system notifications) – barely relevant |
+| `GET /notifications/{notificationId}/elements/v1` | elements of a notification (empty in the sample) |
+| `GET /courses/{courseId}/stream/v1?showLightBulletins=true` | stream of a single course |
 
-Stream-Eintrag: `NotificationId`, `Text`, `LocationTitle`, `PublishedDate`, `PublishedBy{PersonId, FirstName, LastName, FullName, ProfileUrl, ProfileImageUrl…}`, `Url`, `ContentUrl`, `ElementId`, `ElementType` (`Unknown`, `LearningToolElement`), `ElementsCount`, `LightBulletin{…}`, `LocationType`, `LocationId`.
+Stream entry: `NotificationId`, `Text`, `LocationTitle`, `PublishedDate`, `PublishedBy{PersonId, FirstName, LastName, FullName, ProfileUrl, ProfileImageUrl…}`, `Url`, `ContentUrl`, `ElementId`, `ElementType` (`Unknown`, `LearningToolElement`), `ElementsCount`, `LightBulletin{…}`, `LocationType`, `LocationId`.
 
-### Kurs-News (Bulletins)
+### Course announcements (bulletins)
 
-`GET /restapi/personal/courses/{courseId}/bulletins/v1?PageSize=…` (ein Kurs hatte 110 Bulletins).
+`GET /restapi/personal/courses/{courseId}/bulletins/v1?PageSize=…` (one course had 110 bulletins).
 
-Felder: `LightBulletinId`, `Text`, `EmbedUrl`, `Pinned`, `PublishedDate`, `ActiveFromDate`, `ActiveToDate`, `PublishedBy{…}`, `AttachedImages[]{PreviewFileUrl, OriginalFileUrl, …}`, `HasResources`, `ResourcesCount`, `AllowComments`, `CommentsCount`.
+Fields: `LightBulletinId`, `Text`, `EmbedUrl`, `Pinned`, `PublishedDate`, `ActiveFromDate`, `ActiveToDate`, `PublishedBy{…}`, `AttachedImages[]{PreviewFileUrl, OriginalFileUrl, …}`, `HasResources`, `ResourcesCount`, `AllowComments`, `CommentsCount`.
 
-- Angehängte Ressourcen: `GET /courses/bulletins/{bulletinId}/elements/v1` → Liste von `LearningToolElement`s (`ElementId`, `Title`, `Url`, `ContentUrl`).
-- Bilder: `OriginalFileUrl` = `https://filerepository.itslearning.com/{guid}?Token=…` (tokenisiert, s. Dateien).
-- `GET /lightbulletins/v1` existiert nur als POST (405 bei GET).
+- Attached resources: `GET /courses/bulletins/{bulletinId}/elements/v1` → list of `LearningToolElement`s (`ElementId`, `Title`, `Url`, `ContentUrl`).
+- Images: `OriginalFileUrl` = `https://filerepository.itslearning.com/{guid}?Token=…` (tokenized, see "Downloading files").
+- `GET /lightbulletins/v1` only exists as POST (405 on GET).
 
-### Nachrichten
+### Messages
 
-`GET /restapi/personal/instantmessages/messagethreads/v4?pageSize=…` (optional `fromSortIndex` fürs Paging) → `{ Threads: { EntityArray, Total }, HasMore }`. 113 Threads; v1 ignoriert `pageSize` und liefert max. 100.
+`GET /restapi/personal/instantmessages/messagethreads/v4?pageSize=…` (optional `fromSortIndex` for paging) → `{ Threads: { EntityArray, Total }, HasMore }`. 113 threads; v1 ignores `pageSize` and returns at most 100. **`Total` is always 0** – use `HasMore`.
 
 Thread: `InstantMessageThreadId`, `Name`, `Type` (`OneToOne`, `Group`, `Course`), `Created`, `CreatedBy`, `CreatedByTeacher`, `Participants[]{PersonId, FirstName, LastName, FullName, RoleInHierarchyTitle, ProfileUrl, ProfileImageUrl}`, `ParticipantsCount`, `LocationRecipients[]{Title, Type}`, `LastMessage{…}`, `Messages.EntityArray[]`, `LastReadInstantMessageId`, `SortIndex`.
 
-Nachricht: `MessageId`, `Created`, `CreatedBy`, `CreatedByName`, `CreatedByShortName`, `CreatedByAvatar`, `HomeOrganization`, `Text`, `AttachmentUrl`, `AttachmentName`, `Link`, `LinkTitle`, `IsSystemMessage`, `IsDeleted`, `IsEdited`, `IsBroadcastMassMessage`.
+Message: `MessageId`, `Created`, `CreatedBy`, `CreatedByName`, `CreatedByShortName`, `CreatedByAvatar`, `HomeOrganization`, `Text`, `AttachmentUrl`, `AttachmentName`, `Link`, `LinkTitle`, `IsSystemMessage`, `IsDeleted`, `IsEdited`, `IsBroadcastMassMessage`.
 
-- Mehr Nachrichten eines Threads: `GET /messagethreads/{threadId}/messages/v3?pageSize=…&fromId=…` → `{ Messages: { EntityArray } }`, gleiches Nachrichten-Schema. ✅
-- `AttachmentUrl` = `https://filerepository.itslearning.com/{guid}?Token=…&Download=1` → direkter Download ohne Auth ✅ (s. Dateien).
+- More messages of a thread: `GET /messagethreads/{threadId}/messages/v3?pageSize=…&fromId=…` → `{ Messages: { EntityArray, Total } }`, same message schema (`Total` is 0 here as well). ✅
+- `AttachmentUrl` = `https://filerepository.itslearning.com/{guid}?Token=…&Download=1` → direct download without auth ✅ (see "Downloading files").
 
-### Kurs-Ressourcen
+### Course resources
 
-`GET /restapi/personal/courses/{courseId}/resources/v1?PageSize=100` → `{ Resources: { EntityArray } }` (Root-Ordner des Kurses).
+`GET /restapi/personal/courses/{courseId}/resources/v1?PageSize=100` → `{ Resources: { EntityArray } }` (the course's root folder).
 
-Ressource: `ElementId`, `Title`, `ElementType` (`Folder`, `LearningToolElement`), `CourseId`, `Path`, `Url`, `ContentUrl`, `Active`, `Homework`, `LearningToolId`, `LearningObjectId`, `LearningObjectInstanceId`, `IsTopicOrPlanFolder`, `IconUrl`.
+Resource: `ElementId`, `Title`, `ElementType` (`Folder`, `LearningToolElement`), `CourseId`, `Path`, `Url`, `ContentUrl`, `Active`, `Homework`, `LearningToolId`, `LearningObjectId`, `LearningObjectInstanceId`, `IsTopicOrPlanFolder`, `IconUrl`.
 
-- Unterordner: `GET /courses/{courseId}/folders/{folderId}/resources/v1` → gleiches Format. ✅ Für einen vollständigen Baum rekursiv über alle `Folder` gehen.
-- Einzelne Ressource inkl. Kurs: `GET /courses/resources/{resourceId}/v1` (zusätzlich `CourseTitle`, `CourseCode`, `ContextRole`).
-- `ContentUrl`: Ordner → `/Resources?FolderID=…`, Element → `/LearningToolElement/ViewLearningToolElement.aspx?LearningToolElementId=…` (Web-Seite, kein direkter Download).
-- In der Stichprobe (13 Elemente aus 3 Kursen) waren alle Nicht-Ordner `LearningToolElement`. Ob ein Element eine Datei, ein Link, eine Seite oder ein Test ist, steckt nicht im `ElementType`, sondern in `LearningToolId` bzw. `ExtensionId` im `IconUrl`. Das Mapping ist noch offen. Pragmatisch: Download-Flow versuchen und am Ergebnis (`content-disposition`) erkennen, ob es eine Datei ist.
+- Sub-folders: `GET /courses/{courseId}/folders/{folderId}/resources/v1` → same format. ✅ Walk all `Folder`s recursively for a full tree.
+- Single resource incl. course: `GET /courses/resources/{resourceId}/v1` (additionally `CourseTitle`, `CourseCode`, `ContextRole`).
+- `ContentUrl`: folder → `/Resources?FolderID=…`, element → `/LearningToolElement/ViewLearningToolElement.aspx?LearningToolElementId=…` (a web page, no direct download).
+- In the sample all non-folders were `LearningToolElement`. Whether an element is a file, a link, a page or a test is not in `ElementType` but in `LearningToolId` or the `ExtensionId` inside `IconUrl`. That mapping is still open. Pragmatic approach: run the download flow and decide from the result (`content-disposition`) whether it is a file.
 
-### Dateien herunterladen
+### Downloading files
 
-Drei Wege, je nach Quelle:
+Three paths, depending on the source:
 
-**1. Tokenisierte filerepository-URLs** ✅ (Nachrichten-Anhänge `AttachmentUrl`, Bulletin-Bilder `OriginalFileUrl`/`PreviewFileUrl`, Profilbilder)
+**1. Tokenized filerepository URLs** ✅ (message attachments `AttachmentUrl`, bulletin images `OriginalFileUrl`/`PreviewFileUrl`, profile pictures)
 
 ```
 GET https://filerepository.itslearning.com/{guid}?Token=…[&Download=1]
- → 302 → https://filecache.itslearning.com/…?…&expires=…&sign=…   (signierte, ablaufende URL)
- → 200 Datei
+ → 302 → https://filecache.itslearning.com/…?…&expires=…&sign=…   (signed, expiring URL)
+ → 200 file
 ```
 
-Keine Auth nötig, das Token in der URL reicht. Getestet: Nachrichten-Anhang → `application/pdf`, `content-disposition: attachment`. Bulletin-Bild → `image/jpeg`, `inline`. Diese URLs sind damit **Geheimnisse**: Wer sie hat, kommt an die Datei.
+No auth required, the token in the URL is enough. Tested: message attachment → `application/pdf`, `content-disposition: attachment`. Bulletin image → `image/jpeg`, `inline`. These URLs are therefore **secrets**: whoever has them can get the file.
 
-**2. Kurs-Ressourcen (LearningToolElement)** ✅ verifiziert mit einem PDF (~1 MB)
+**2. Course resources (LearningToolElement)** ✅ verified with a PDF (~1 MB)
 
-Die API liefert keine Datei-URL, also geht es über die Web-Oberfläche. Ein Cookie-Jar ist nötig; alle Hosts liegen unter `*.itslearning.com`.
+The API provides no file URL, so the path goes through the web UI. A cookie jar is required; all hosts are under `*.itslearning.com`.
 
 ```
 1. GET /restapi/personal/sso/url/v1?url=<ContentUrl>          (Bearer)
-   → { Url: "https://<schule>.itslearning.com/{token}/MobileAppLoginSso.aspx?…&Signature=…" }
+   → { Url: "https://<instance>.itslearning.com/{token}/MobileAppLoginSso.aspx?…&Signature=…" }
 2. GET <Url>                         → 302 ProcessLogin.aspx?… → 302 ViewLearningToolElement.aspx (200, HTML)
-3. HTML enthält <iframe src="https://platform.itslearning.com/LoginSSO.aspx?…">
-   GET iframe-src                    → 302 platform…/LearningObjects/LearningObjectInstance.aspx?…
+3. The HTML contains <iframe src="https://platform.itslearning.com/LoginSSO.aspx?…">
+   GET iframe src                    → 302 platform…/LearningObjects/LearningObjectInstance.aspx?…
                                      → 302 → 200 https://resource.itslearning.com/File/View.aspx?… (HTML)
-4. HTML enthält Link https://resource.itslearning.com/Proxy/DownloadRedirect.ashx?LearningObjectId={n}&LearningObjectInstanceId={n}
+4. The HTML contains the link https://resource.itslearning.com/Proxy/DownloadRedirect.ashx?LearningObjectId={n}&LearningObjectInstanceId={n}
    GET DownloadRedirect              → 302 filerepository…/{guid}?Token=…&Download=1
-                                     → 302 filecache… → 200 Datei (content-disposition: attachment)
+                                     → 302 filecache… → 200 file (content-disposition: attachment)
 ```
 
-Beobachtungen:
-- `LearningObjectId` und `LearningObjectInstanceId` aus dem `DownloadRedirect`-Link stehen **auch in der Ressourcen-API**. Möglicher Abkürzungsweg: Nach einmaligem Aufbau der `resource.itslearning.com`-Session direkt `DownloadRedirect.ashx` mit den IDs aus der API aufrufen. ⏳ (noch nicht getestet)
-- Die Session-URLs (`MobileAppLoginSso`, `ProcessLogin`, `platform…/LoginSSO.aspx`, `File/View.aspx`) tragen Signaturen sowie **`FirstName`, `LastName`, `Email`, `UserName`, `PersonId` als Query-Parameter**. Sie dürfen nie geloggt oder an Agenten weitergegeben werden.
-- Etwa 8 Requests pro Datei → Session pro Lauf wiederverwenden und Downloads lokal cachen (Schlüssel: `ElementId` + `LastUpdated`).
+Observations:
+- `LearningObjectId` and `LearningObjectInstanceId` from the `DownloadRedirect` link are **also in the resources API**. Possible shortcut: once the `resource.itslearning.com` session exists, call `DownloadRedirect.ashx` directly with the IDs from the API. ⏳ (not tested yet)
+- The session URLs (`MobileAppLoginSso`, `ProcessLogin`, `platform…/LoginSSO.aspx`, `File/View.aspx`) carry signatures as well as **`FirstName`, `LastName`, `Email`, `UserName`, `PersonId` as query parameters**. They must never be logged or handed to agents.
+- About 8 requests per file → reuse the session and cache downloads locally.
+- Pages that are not files (links, notes, embedded tools) can contain launch parameters of external learning tools as **URL-encoded JSON including `PersonId`** – these must be stripped from page text.
 
-**3. Aufgaben-Anhänge:** `GET /assignments/{elementId}/files/{fileId}/v1` → laut Doku 302 auf die Datei, vermutlich wieder `filerepository` → `filecache`. ⏳ (In den getesteten Aufgaben waren keine Dateien angehängt.)
+**3. Task attachments:** `GET /assignments/{elementId}/files/{fileId}/v1` → according to the docs a 302 to the file, presumably again `filerepository` → `filecache`. ⏳ (none of the tested tasks had attachments.)
 
-### Kalender
+### Calendar
 
-- `GET /calendar/events/v1` **braucht `fromDate`** (sonst 400). Mit `fromDate` = heute −7 Tage: 0 Einträge.
-- `GET /courses/{courseId}/calendarevents/v1?fromDate=…`: in 3 Kursen 0 Einträge.
-- iCal-Feed (`iCalUrl`, `webcal://` durch `https://` ersetzen): 200, gültiges `VCALENDAR`, aber 0 `VEVENT`. Der Server liefert ihn fälschlich als `text/html`.
-- → Die Schule nutzt den itslearning-Kalender nicht. Für den MCP vorerst weglassen; Fristen kommen über Aufgaben.
+- `GET /calendar/events/v1` **requires `fromDate`** (400 otherwise). With `fromDate` = today −7 days: 0 entries.
+- `GET /courses/{courseId}/calendarevents/v1?fromDate=…`: 0 entries in 3 courses.
+- iCal feed (`iCalUrl`, replace `webcal://` with `https://`): 200, valid `VCALENDAR`, but 0 `VEVENT`. The server wrongly serves it as `text/html`.
+- → The reference instance does not use the itslearning calendar. Left out of the MCP server for now; deadlines come via tasks.
 
-## Funktioniert nicht / nicht deployt
+## Not working / not deployed
 
-| Endpunkt | Status | Anmerkung |
+| Endpoint | Status | Note |
 |---|---|---|
-| `/organisations/v1`, `/hierarchies/v1` | 404 | existieren nicht |
-| `/lightbulletins/v1` | 405 | nur POST |
-| `/courses/{id}/resources/lastupdated/v1` | 404 | in Doku, aber nicht deployt |
-| `/notifications/unread-count/v1` | 404 | in Doku, aber nicht deployt |
-| `/instantmessages/messagethreads/unread-count/v1` | 404 | in Doku, aber nicht deployt |
-| `/calendar/events/v1` ohne `fromDate` | 400 | Parameter Pflicht |
-| `/assignments/{id}/v1` für `CustomActivity` | 403 | nur über Web-Seite |
+| `/organisations/v1`, `/hierarchies/v1` | 404 | do not exist |
+| `/lightbulletins/v1` | 405 | POST only |
+| `/courses/{id}/resources/lastupdated/v1` | 404 | documented, but not deployed |
+| `/notifications/unread-count/v1` | 404 | documented, but not deployed |
+| `/instantmessages/messagethreads/unread-count/v1` | 404 | documented, but not deployed |
+| `/calendar/events/v1` without `fromDate` | 400 | parameter required |
+| `/assignments/{id}/v1` for `CustomActivity` | 403 | web page only |
 
-## Personenbezogene Daten & Redaction
+## Personal data & redaction
 
-### Wo personenbezogene Daten vorkommen
+### Where personal data appears
 
-**Strukturierte Personenfelder** (eindeutig erkennbar):
+**Structured person fields** (clearly identifiable):
 
-| Endpunkt | Felder |
+| Endpoint | Fields |
 |---|---|
-| Person | `FirstName`, `LastName`, `FullName`, `PersonId`, `ProfileImageUrl`, `iCalUrl` (Geheimnis!) |
-| Stream, Newsfeed, Bulletins | `PublishedBy.{PersonId, FirstName, LastName, FullName, ProfileUrl, ProfileImageUrl, ProfileImageUrlSmall}` |
-| Nachrichten-Threads | `Participants[].{PersonId, FirstName, LastName, FullName, ProfileUrl, ProfileImageUrl, RoleInHierarchyTitle}`, `CreatedBy` |
-| Nachrichten | `CreatedBy`, `CreatedByName`, `CreatedByShortName`, `CreatedByAvatar`, `HomeOrganization`, `DeletedBy` |
-| Assignment-Detail | `ProgressReportUrl…PlaceHolder` enthält `PersonId` |
-| Kurs-Features | URLs mit `PersonId` |
+| Person | `FirstName`, `LastName`, `FullName`, `PersonId`, `ProfileImageUrl`, `iCalUrl` (secret!) |
+| Stream, newsfeed, bulletins | `PublishedBy.{PersonId, FirstName, LastName, FullName, ProfileUrl, ProfileImageUrl, ProfileImageUrlSmall}` |
+| Message threads | `Participants[].{PersonId, FirstName, LastName, FullName, ProfileUrl, ProfileImageUrl, RoleInHierarchyTitle}`, `CreatedBy` |
+| Messages | `CreatedBy`, `CreatedByName`, `CreatedByShortName`, `CreatedByAvatar`, `HomeOrganization`, `DeletedBy` |
+| Course participants | `PersonId`, `FullName` (format "Last, First" or "First Last"), `Role` |
+| Assignment details | `ProgressReportUrl…PlaceHolder` contains `PersonId` |
+| Course features | URLs containing `PersonId` |
 
-**Freitext, in dem Namen stehen können:** `Text` (Stream, Bulletins, Nachrichten, Aufgaben), `Description`, `RawText`, `Title`/`Name` (Thread-Namen sind oft Personennamen!), `AttachmentName`, `LinkTitle`, `LocationRecipients[].Title`, Dateinamen und Dateiinhalte.
+**Free text that may contain names:** `Text` (stream, bulletins, messages, tasks), `Description`, `RawText`, `Title`/`Name` (thread names are often person names!), `AttachmentName`, `LinkTitle`, `LocationRecipients[].Title`, file names and file contents.
 
-**Geheimnisse** (nie an Agenten geben, nie loggen): Access-/Refresh-Token, `iCalUrl`, SSO-URLs und alle Session-URLs aus dem Download-Flow (die enthalten zusätzlich Name, E-Mail und Benutzername als Query-Parameter), filerepository-URLs mit `?Token=`, signierte `filecache`-URLs.
+**Secrets** (never hand to agents, never log): access/refresh token, `iCalUrl`, SSO URLs and every session URL of the download flow (they additionally carry name, e-mail and user name as query parameters), filerepository URLs with `?Token=`, signed `filecache` URLs.
 
-### Vorgeschlagene Strategie für den MCP-Server
+### Strategy (implemented, see the spec)
 
-1. **Allowlist statt Blocklist:** Jedes Tool gibt ein eigenes, schlankes DTO zurück (z. B. `{ title, course, deadline, status, text }`), nie die Roh-Antwort. Neue Felder der API landen so nicht automatisch beim Agenten.
-2. **Pseudonymisierung von Personen:** Personen werden zu stabilen Pseudonymen, z. B. `Lehrkraft-A3F2` / `Schüler:in-91BC` (HMAC über `PersonId` mit lokalem Secret). Die Rolle kommt aus `CreatedByTeacher` / `RoleInHierarchyTitle`. So erkennt ein Agent „gleiche Person“, ohne den Namen zu kennen. Das eigene Konto wird zu `Ich`.
-3. **Namens-Wörterbuch für Freitext:** Alle Namen, die in Strukturfeldern auftauchen (`PublishedBy`, `Participants`, `CreatedByName` …), werden in einem lokalen Wörterbuch gesammelt (Vor-, Nach-, Kurzname). Daraus werden Ersetzungen für alle Freitexte gebaut (wortgrenzen-basiert, Groß-/Kleinschreibung ignoriert). Zusätzlich Regex für E-Mail-Adressen, Telefonnummern und itslearning-Profil-URLs.
-4. **URLs:** Profil-/Avatar-URLs entfernen; itslearning-Element-URLs durch interne IDs ersetzen (Agent ruft Details/Download über Tools ab); filerepository-Tokens nie ausgeben.
-5. **Dateien:** Download landet lokal in einem Arbeitsverzeichnis; der Agent bekommt Pfad, Typ und Größe mit geschwärztem Dateinamen. Optional Textextraktion (PDF/DOCX) mit derselben Freitext-Redaction. **Grenze:** Namen in Bildern/Scans oder unbekannte Namen (die nie in einem Strukturfeld vorkamen) werden nicht erkannt.
-6. **Konfigurierbar:** z. B. `ITSL_REDACT_TEACHERS=false`, falls Lehrkräfte-Namen für die Agenten nützlich und vertretbar sind. Default: alles redacted.
+1. **Allowlist instead of blocklist:** every tool returns its own slim DTO, never the raw response. New API fields therefore never reach the agent automatically.
+2. **Pseudonymisation of people:** people become stable pseudonyms (HMAC over `PersonId` with a local secret), the role comes from `CreatedByTeacher` / `RoleInHierarchyTitle` / course role. An agent can tell "same person" without knowing the name. The own account becomes `Me`.
+3. **Name dictionary for free text:** all names from structured fields are collected and used to replace names in all free text (word-boundary based, case-insensitive). Plus regexes for e-mail addresses, phone numbers, internal links, ID pairs and URL-encoded blobs.
+4. **URLs:** profile/avatar URLs are dropped; itslearning element URLs are replaced by internal references (the agent fetches details/downloads via tools); filerepository tokens are never emitted.
+5. **Files:** extracted text (PDF/DOCX/text) goes through the same redaction. **Limit:** names in images/scans, and unknown names (never seen in a structured field), are not detected.
+6. **Configurable:** e.g. `REDACT_TEACHERS=true` to pseudonymise teachers as well.
 
-> Hinweis DSGVO: Pseudonymisierung ≠ Anonymisierung. Die Redaction reduziert das Risiko deutlich, ersetzt aber nicht die Abwägung, welche Daten überhaupt an ein (Cloud-)LLM gehen.
+> GDPR note: pseudonymisation is not anonymisation. Redaction reduces the risk considerably but does not replace the decision which data should go to a (cloud) LLM at all.
 
-## Status der Prüfpunkte
+## Status of the checks
 
-- [x] Datei-Download Kurs-Ressourcen über SSO-URL + Web-Session (PDF)
-- [x] Direkter Download tokenisierter filerepository-URLs (Nachrichten-Anhang PDF, Bulletin-Bild JPEG)
-- [x] Unterordner-Ressourcen
+- [x] Course resource download via SSO URL + web session (PDF)
+- [x] Direct download of tokenized filerepository URLs (message attachment PDF, bulletin image JPEG)
+- [x] Sub-folder resources
 - [x] `messagethreads/{id}/messages/v3`
-- [x] iCal-Feed (leer)
-- [ ] Aufgaben-Anhänge (`/assignments/{id}/files/{fileId}/v1`): keine Testdaten vorhanden. Beim ersten echten Anhang im MCP prüfen.
-- [ ] `LearningToolId`-Mapping (Datei vs. Link vs. Seite vs. Test)
-- [ ] Abkürzung `DownloadRedirect.ashx` direkt mit IDs aus der API
-- [ ] Wie verhalten sich andere `LearningToolElement`-Typen (Link, Seite) im Download-Flow?
+- [x] iCal feed (empty)
+- [x] Course participants readable for a student account
+- [ ] Task attachments (`/assignments/{id}/files/{fileId}/v1`): no test data available yet
+- [ ] `LearningToolId` mapping (file vs. link vs. page vs. test)
+- [ ] `DownloadRedirect.ashx` shortcut using IDs from the API
 
-Keiner der offenen Punkte blockiert den Bau des MCP-Servers. Sie lassen sich beim Implementieren klären.
+## Probe scripts
 
-## Probe-Skripte
-
-| Skript | Zweck |
+| Script | Purpose |
 |---|---|
-| `scripts/lib.ts` | Terminal-Eingabe (verdecktes Passwort), OAuth2-Login, Refresh, API-Client mit Auto-Refresh |
-| `scripts/probe.ts` (`bun run probe`) | Runde 1: grobe Verfügbarkeit von 12 Endpunkten |
-| `scripts/probe2.ts` (`bun run probe2`) | Runde 2/3: Tiefenprobe; schreibt **redacted** Report nach `probe-output/report2.json` (nur Feldnamen/Typen, Status, Anzahlen, URL-Muster, Enum-Werte). `--save` speichert zusätzlich Rohdaten lokal (privat!). |
+| `scripts/lib.ts` | Terminal input (hidden password), OAuth2 login, refresh, API client with auto-refresh |
+| `scripts/probe.ts` (`bun run probe`) | Round 1: rough availability of 12 endpoints |
+| `scripts/probe2.ts` (`bun run probe2`) | Rounds 2/3: deep probe; writes a **redacted** report to `probe-output/report2.json` (field names/types, status, counts, URL patterns, enum values only). `--save` additionally stores raw data locally (private!). |
 
-`probe-output/` ist in `.gitignore`.
+`probe-output/` is gitignored.

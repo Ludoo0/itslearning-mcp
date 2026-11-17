@@ -1,148 +1,259 @@
 # itslearning-mcp
 
-MCP-Server, der KI-Agenten **lesenden** Zugriff auf ein itslearning-Konto gibt – mit Schwärzung personenbezogener Daten.
+A read-only [Model Context Protocol](https://modelcontextprotocol.io) server for **itslearning**, the learning platform used by many schools. It lets AI agents (Claude, or any other MCP client) read a student's tasks, news, course announcements, messages and course files – and **redacts personal data** before anything leaves the server.
 
-- Spezifikation: [`docs/mcp-server-spec.md`](docs/mcp-server-spec.md)
-- API-Erkenntnisse: [`docs/itslearning-api.md`](docs/itslearning-api.md)
+```
+Agent ──MCP──▶ itslearning-mcp ──REST──▶ https://<your-school>.itslearning.com
+                 │
+                 └─ pseudonymises people, strips e-mail/phone/links/tokens,
+                    returns slim, allowlisted results only
+```
 
-## Status
+## ⚠️ Disclaimer
 
-| Meilenstein | Inhalt | Stand |
-|---|---|---|
-| M1 | Grundgerüst, Config, Login/Refresh, `list_courses`, `list_tasks`, `get_task`, stdio | ✅ |
-| M2 | Personen-Registry, Lehrkräfte-Verzeichnis, `overview`, `list_news`, `list_bulletins`, `list_message_threads`, `get_message_thread` | ✅ |
-| M3 | `list_course_files`, `download_file` (Textextraktion PDF/DOCX, Cache), fileRefs in Aufgaben/Nachrichten/Ankündigungen | ✅ |
-| M4 | HTTP-Transport mit API-Key, Docker, Smoke-Test | ✅ |
+- **Unofficial.** This project is not affiliated with, endorsed by or supported by itslearning AS. "itslearning" is a trademark of its owner.
+- It uses the **undocumented REST API of the official itslearning mobile app**, including that app's public OAuth client ID. The API can change or break at any time without notice.
+- It is **read-only**: it cannot submit work, send messages or change anything.
+- **You are responsible** for complying with the terms of use of your school and of itslearning, and with data-protection law (e.g. the GDPR) – especially because the data concerns minors and third parties (classmates, teachers). Only use it with an account you are entitled to use.
+- **Pseudonymisation is not anonymisation.** Redaction considerably reduces what reaches an AI model, but it cannot catch everything (see [Limits](#limits)). In particular, **file and image contents are not redacted** – only extracted text is.
+- Provided "as is", without warranty (see [LICENSE](LICENSE)).
 
-## Voraussetzungen
+## Features
 
-- [Bun](https://bun.sh) ≥ 1.4
-- itslearning-Instanz mit **nativem Login** (Benutzername/Passwort). Instanzen, die nur Login über einen fremden Anbieter (Microsoft, Google, IServ …) anbieten, werden in v1 nicht unterstützt.
+- **10 read-only tools**: overview, courses, tasks (+ details), news, course announcements, message threads (+ messages), course files and file downloads.
+- **Redaction by default**: the account owner becomes `Me`, teachers `Teacher Müller` (or `Mrs Müller`), classmates `Student-7F3A`; names in free text, e-mail addresses, phone numbers, internal links, tokens and encoded data blobs are removed. Labels in English (default) or German.
+- **File downloads** with text extraction (PDF, DOCX, text) – the extracted text is redacted, too.
+- **Two transports**: stdio for local clients, stateless Streamable HTTP with API key for Docker/remote use.
+- **Gentle on the instance**: caching, rate limiting, retries with backoff, single login with a persisted, rotating refresh token.
+- **Docker image** (non-root, read-only filesystem) published to GHCR.
+- **Leak smoke test** against your real account that prints counts only, so you can share its output.
 
-## Schnellstart (lokal, stdio)
+## Requirements
+
+- An itslearning instance with **native login** (user name + password on the itslearning login page). Instances that only offer login via a third-party identity provider (Microsoft, Google, Feide, …) are **not supported** – the server detects this and reports `SSO_NOT_SUPPORTED`.
+- A student account. Parent accounts are not supported yet (see [roadmap](docs/roadmap.md)).
+- Docker, or [Bun](https://bun.sh) ≥ 1.4 to run it without Docker.
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `itslearning_overview` | Starting point: overdue and upcoming tasks, recent news, unread message threads |
+| `itslearning_list_courses` | Current (optionally all) courses with `courseId` and new-item counters |
+| `itslearning_list_tasks` | Tasks/homework sorted by deadline; filter by course, status, due date, homework, active courses |
+| `itslearning_get_task` | Task details: assignment text, deadline, submission type, attachments (`fileRef`) |
+| `itslearning_list_news` | News feed across all courses or one course, optionally since a date |
+| `itslearning_list_bulletins` | Announcements of a course incl. attached resources and images |
+| `itslearning_list_message_threads` | Message threads with last message and unread status |
+| `itslearning_get_message_thread` | Messages of a thread in chronological order, attachments as `fileRef` |
+| `itslearning_list_course_files` | Folders and elements of a course (optionally recursive) with `fileRef` |
+| `itslearning_download_file` | Download a file by `fileRef`: redacted text, image, or file content |
+
+## Quick start (Docker)
+
+```bash
+git clone https://github.com/Ludoo0/itslearning-mcp.git
+cd itslearning-mcp
+
+# 1. Secrets (secrets/ is ignored by git and by the Docker build)
+cp -r secrets.example secrets
+#    edit secrets/itsl_username, secrets/itsl_password, secrets/mcp_api_key
+#    generate an API key, e.g.:
+openssl rand -hex 32
+
+# 2. Start (prebuilt image from GHCR)
+export ITSL_BASE_URL=https://yourschool.itslearning.com
+docker compose pull && docker compose up -d
+docker compose ps          # should become "healthy"
+
+# …or build the image locally instead
+docker compose up -d --build
+```
+
+PowerShell: `Copy-Item -Recurse secrets.example secrets` and `$env:ITSL_BASE_URL = "https://yourschool.itslearning.com"`. Compose also reads `ITSL_BASE_URL` from a `.env` file next to `compose.yaml`. Pin a version with `ITSLEARNING_MCP_VERSION=0.1.0`.
+
+- The server listens on `http://127.0.0.1:3000/mcp` (localhost only). For access from other machines put a TLS reverse proxy in front.
+- Every request needs `Authorization: Bearer <mcp_api_key>`. `GET /healthz` is unauthenticated.
+- Container: Alpine, user `bun` (UID 1000), read-only root filesystem except `/data` (volume) and `/tmp`, all capabilities dropped.
+- On Linux hosts the secret files must be readable by UID 1000 (`sudo chown 1000:1000 secrets/*`).
+
+### Connect a client
+
+**Claude Code (HTTP):**
+
+```bash
+claude mcp add --transport http itslearning http://127.0.0.1:3000/mcp \
+  --header "Authorization: Bearer $(cat secrets/mcp_api_key)"
+```
+
+**Claude Desktop / other stdio clients** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "itslearning": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "MCP_TRANSPORT=stdio",
+        "-e", "ITSL_BASE_URL=https://yourschool.itslearning.com",
+        "-e", "ITSL_USERNAME=…",
+        "-e", "ITSL_PASSWORD=…",
+        "-v", "itsl-data:/data",
+        "ghcr.io/ludoo0/itslearning-mcp:latest"
+      ]
+    }
+  }
+}
+```
+
+## Running locally (without Docker)
 
 ```bash
 bun install
+cp .env.example .env        # fill in ITSL_BASE_URL, ITSL_USERNAME, ITSL_PASSWORD
 bun test
 
-# Tools auflisten (ohne Login)
+# List the tools (no login needed)
 bun run call
 
-# Gegen das echte Konto testen (Zugangsdaten aus .env oder interaktive Abfrage, Passwort verdeckt)
+# Call tools against your account (Bun loads .env automatically; otherwise you are prompted, password hidden)
 bun run call itslearning_overview
 bun run call itslearning_list_tasks limit=5
 bun run call itslearning_get_task elementId=123
-bun run call itslearning_list_news limit=10
-bun run call itslearning_list_bulletins courseId=123
-bun run call itslearning_list_message_threads unreadOnly=true
-bun run call itslearning_get_message_thread threadId=123
 bun run call itslearning_list_course_files courseId=123 recursive=true
 bun run call itslearning_download_file fileRef=e_123
 ```
 
-Tipp: `.env.example` nach `.env` kopieren und ausfüllen – Bun lädt sie automatisch, `.env` ist von Git ausgeschlossen.
-
-In `.data/` liegen danach:
-- `state.json` – Login-Status (rotierender Refresh-Token; das Passwort wird nicht gespeichert)
-- `secret` – Schlüssel für stabile Pseudonyme
-- `teachers.json` – Lehrkräfte-Verzeichnis (siehe unten)
-- `files/` – Datei-Cache (24 h, max. 500 MB)
-
-### Dateien
-
-Tools liefern `fileRef`-Werte (z. B. `e_123` Kurs-Element, `a_1_2` Aufgaben-Anhang, `m_1_2` Nachrichten-Anhang, `i_1_2_0` Bild). `itslearning_download_file` lädt sie:
-
-| `mode` | Ergebnis |
-|---|---|
-| `auto` (Standard) | PDF/DOCX/Text → **geschwärzter Text**; Bilder → Bild; sonst Datei |
-| `text` | nur geschwärzter Text |
-| `blob` / `both` | Datei (bzw. Datei + Text) |
-
-**Wichtig:** Bilder und Dateien (blob) werden inhaltlich nicht geschwärzt – nur extrahierter Text. Mit `DOWNLOAD_DIR` werden Dateien zusätzlich lokal abgelegt.
-
-### Anrede der Lehrkräfte pflegen
-
-Der Server trägt erkannte Lehrkräfte automatisch in `.data/teachers.json` ein (nur Nachname, keine Vornamen oder IDs):
-
-```json
-{ "teachers": [ { "id": "A3F2C1D0", "lastName": "Müller", "anrede": "" } ] }
-```
-
-`anrede` auf `"Frau"` oder `"Herr"` setzen → Agenten sehen „Frau Müller“. Leer → „Lehrkraft Müller“. Änderungen gelten ohne Neustart.
-
-### In Claude Code einbinden
+Use it from Claude Code via stdio:
 
 ```bash
 claude mcp add itslearning \
-  -e ITSL_BASE_URL=https://meineschule.itslearning.com \
+  -e ITSL_BASE_URL=https://yourschool.itslearning.com \
   -e ITSL_USERNAME=… -e ITSL_PASSWORD=… \
-  -e DATA_DIR=/pfad/zu/itslearning-mcp/.data \
-  -- bun run /pfad/zu/itslearning-mcp/src/server.ts
+  -e DATA_DIR=/path/to/itslearning-mcp/.data \
+  -- bun run /path/to/itslearning-mcp/src/server.ts
 ```
 
-## Betrieb mit Docker (HTTP)
+`DATA_DIR` (default `/data`, `.data` in `.env.example`) holds:
+- `state.json` – login state (rotating refresh token; the password is never stored)
+- `secret` – key for stable pseudonyms
+- `teachers.json` – teacher directory (see below)
+- `files/` – file cache (24 h, max. 500 MB)
 
-```powershell
-# 1. Secrets anlegen (secrets/ ist von Git und vom Docker-Build ausgeschlossen)
-Copy-Item -Recurse secrets.example secrets
-#    → secrets/itsl_username, secrets/itsl_password, secrets/mcp_api_key mit echten Werten füllen
-#    API-Key erzeugen:
-bun -e "console.log(crypto.randomUUID().replaceAll('-','') + crypto.randomUUID().replaceAll('-',''))"
+## Configuration
 
-# 2. Starten (ITSL_BASE_URL aus der Umgebung – oder aus der .env, die Compose automatisch liest)
-$env:ITSL_BASE_URL = "https://meineschule.itslearning.com"
-docker compose up -d --build
-docker compose ps        # Status "healthy"
+All settings are environment variables. Variables marked *(file)* also accept `<NAME>_FILE` pointing to a file (Docker secrets), which takes precedence.
+
+| Variable | Default | Description |
+|---|---|---|
+| `ITSL_BASE_URL` | **required** | Your instance, e.g. `https://yourschool.itslearning.com` |
+| `ITSL_USERNAME` *(file)* | **required** | itslearning user name |
+| `ITSL_PASSWORD` *(file)* | **required** | itslearning password |
+| `ITSL_CLIENT_ID` | mobile app client ID | OAuth client ID |
+| `MCP_TRANSPORT` | `stdio` (image: `http`) | `stdio` or `http` |
+| `MCP_HOST` | `127.0.0.1` (image: `0.0.0.0`) | HTTP bind address |
+| `MCP_PORT` | `3000` | HTTP port |
+| `MCP_API_KEY` *(file)* | required for `http` | Bearer key for clients, ≥ 32 characters |
+| `MCP_ALLOWED_ORIGINS` | empty | Allowed browser origins (comma-separated); other `Origin` headers → 403 |
+| `REDACTION_LANGUAGE` | `en` | Labels and placeholders: `en` or `de` |
+| `REDACTION_SECRET` *(file)* | generated | HMAC secret for pseudonyms (≥ 16 characters), stored in `DATA_DIR/secret` if not set |
+| `REDACTION_KEEP_WORDS` | empty | Comma-separated words never replaced as a single name (see below) |
+| `REDACT_TEACHERS` | `false` | `true` → pseudonymise teachers too (`Teacher-7F3A`) |
+| `TEACHER_ROLE_TITLES` | `Teacher,Staff,Lehrer,Lehrerin,Lehrkraft,Mitarbeiter` | Role titles that count as teacher (substring, case-insensitive) |
+| `MAX_FILE_MB` | `25` | Maximum download size |
+| `CACHE_TTL_S` | `60` | List cache lifetime |
+| `MAX_CONCURRENCY` | `2` | Parallel requests to itslearning |
+| `MIN_REQUEST_INTERVAL_MS` | `200` | Minimum spacing between requests |
+| `DATA_DIR` | `/data` | Persistent state, secret, teacher directory, file cache |
+| `DOWNLOAD_DIR` | – | Additionally save downloaded files here (redacted file name) |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+
+## Privacy and redaction
+
+How people appear in tool output:
+
+| Who | `REDACTION_LANGUAGE=en` | `REDACTION_LANGUAGE=de` |
+|---|---|---|
+| Account owner | `Me` | `Ich` |
+| Teacher (salutation set) | `Mrs Müller` | `Frau Müller` |
+| Teacher (no salutation) | `Teacher Müller` | `Lehrkraft Müller` |
+| Teacher with `REDACT_TEACHERS=true` | `Teacher-7F3A` | `Lehrkraft-7F3A` |
+| Classmate | `Student-7F3A` | `Schüler:in-7F3A` |
+| Unknown role | `Person-7F3A` | `Person-7F3A` |
+
+Placeholders: `[email]`, `[phone]`, `[itslearning link]`, `[link removed]`, `[encoded data removed]`, `[name]` (ambiguous name), `[ID]` (de: `[E-Mail]`, `[Telefon]`, `[itslearning-Link]`, `[Link entfernt]`, `[kodierte Daten entfernt]`, `[Name]`).
+
+How it works:
+- Tools return **allowlisted fields only**, never raw API responses. Person IDs and profile/avatar URLs are never emitted.
+- Pseudonyms are stable (HMAC of the person ID with a local secret), so an agent can tell that two messages come from the same person.
+- Names in free text (tasks, news, messages, thread titles, file names, extracted file text) are replaced using a dictionary of every person the server knows: participants of recent message threads (loaded at startup), course participants (loaded before course content) and every person in API responses.
+- E-mail addresses, phone numbers, itslearning links, tokens, ID pairs and URL-encoded data are removed. External links are kept only if their parameters look harmless.
+
+### Teacher salutations
+
+Teachers are added automatically to `DATA_DIR/teachers.json` (last name only – no first names, no IDs):
+
+```json
+{ "teachers": [ { "id": "A3F2C1D0", "lastName": "Müller", "salutation": "" } ] }
 ```
 
-- Server: `http://127.0.0.1:3000/mcp` (nur lokal gebunden; für Zugriff von außen einen Reverse-Proxy mit TLS davorsetzen), Health-Check: `/healthz`.
-- Jeder Request braucht `Authorization: Bearer <mcp_api_key>`.
-- Container: Alpine, User `bun` (kein root), Dateisystem read-only bis auf `/data` (Volume `itsl-data`) und `/tmp`, alle Capabilities entfernt.
-- Login-Status, Lehrkräfte-Verzeichnis und Datei-Cache liegen im Volume – getrennt von `.data/` der lokalen Entwicklung.
-- Anrede der Lehrkräfte im Container pflegen: `docker compose exec itslearning-mcp vi /data/teachers.json`
-- Linux-Host: Secret-Dateien müssen für UID 1000 lesbar sein (`sudo chown 1000:1000 secrets/*`), siehe `secrets.example/README.txt`.
-- `docker run … --tmpfs /tmp` aus **Git Bash**: `MSYS_NO_PATHCONV=1` voranstellen, sonst wird der Pfad umgeschrieben.
+Set `salutation` (e.g. `"Mrs"`, `"Mr"`, `"Frau"`, `"Herr"`) and the agent sees `Mrs Müller`; leave it empty for `Teacher Müller`. Changes apply without restart. The salutation is never guessed. In Docker: `docker compose exec itslearning-mcp vi /data/teachers.json`.
 
-### In Claude Code einbinden (HTTP)
+### `REDACTION_KEEP_WORDS`
 
-```bash
-claude mcp add --transport http itslearning http://127.0.0.1:3000/mcp \
-  --header "Authorization: Bearer <mcp_api_key>"
-```
+A person's last name can also be an ordinary word (e.g. a place adjective in an event title) and would then be replaced everywhere. Words listed in `REDACTION_KEEP_WORDS` are never replaced as a single name – but then also not where they really refer to that person. Full names are still replaced. Set it via `.env`/compose, not in the repository.
 
-## Konfiguration
+### Limits
 
-Siehe [`.env.example`](.env.example) und Spec, Abschnitt 3.
+- Names that never appear in a structured field (e.g. parents, people outside your courses) are not detected in free text.
+- **Images and file contents (blobs) are not redacted**, only extracted text. With `mode=auto`, PDFs/DOCX/text files are returned as redacted text only.
+- Pseudonymisation is not anonymisation – think about which data you send to an AI model at all.
 
-## Datenschutz (Stand M3)
+## Files
 
-| Wer | Anzeige |
+Tools return `fileRef` values: `e_<id>` course element, `a_<task>_<file>` task attachment, `m_<thread>_<message>` message attachment, `i_<course>_<bulletin>_<n>` announcement image. They contain no secrets and stay valid across restarts.
+
+`itslearning_download_file` modes:
+
+| `mode` | Result |
 |---|---|
-| eigenes Konto | `Ich` |
-| Lehrkraft | `Frau Müller` / `Lehrkraft Müller` (mit `REDACT_TEACHERS=true`: `Lehrkraft-A3F2`) |
-| Mitschüler:in | `Schüler:in-7F3A` |
-| Rolle unbekannt | `Person-7F3A` |
+| `auto` (default) | PDF/DOCX/text → **redacted text**; images → image; other formats → file |
+| `text` | redacted text only |
+| `blob` | file only (not redacted) |
+| `both` | file + redacted text |
 
-- Pseudonyme sind stabil (HMAC über die PersonId mit lokalem Secret).
-- Namen in Freitexten (Aufgaben, Neuigkeiten, Nachrichten, Thread-Titel, Datei-Namen, extrahierte Datei-Texte) werden über ein Wörterbuch aller bekannten Personen ersetzt. Gefüllt wird es aus: Teilnehmer:innen der neuesten Unterhaltungen (beim Start), Kurs-Teilnehmer:innen (vor Kurs-Inhalten) und allen Personen in API-Antworten.
-- E-Mail-Adressen, Telefonnummern und itslearning-interne Links (inkl. Download-Tokens) werden entfernt; externe Links bleiben.
-- Tools geben nur ausgewählte Felder zurück, nie die Roh-Antwort der API.
-- **Grenzen:** Namen von Personen, die in keinem Strukturfeld vorkamen (z. B. Eltern), werden in Texten nicht erkannt. Pseudonymisierung ist keine Anonymisierung.
+Elements that are not files (links, notes, tests) return `kind: "page"` with the redacted page text.
 
-## Smoke-Test gegen die echte Instanz
+## Smoke test against your account
 
 ```bash
-bun run smoke             # ruft jedes Tool einmal auf und prüft alle Ausgaben auf Leaks
-bun run smoke --details   # zeigt Treffer maskiert an (z. B. "S****")
+bun run smoke             # calls every tool once and checks all output for leaks
+bun run smoke --details   # additionally shows masked findings (e.g. "S****") and their structure
 ```
 
-Das Skript holt die echten Namen (eigenes Konto, Unterhaltungen, Neuigkeiten, Kurs-Teilnehmer:innen) direkt über die API und prüft, ob einer davon in einer Tool-Ausgabe auftaucht – dazu Muster für Tokens, Session-URLs und E-Mail-Adressen. **Die Ausgabe enthält nur Zählungen, keine Namen oder Inhalte**, sie kann also geteilt werden. Exit-Code 1 bei Treffern.
+The script fetches the real names (own account, threads, news, course participants) directly from the API and checks whether any of them – or tokens, session URLs, e-mail addresses, person IDs – appear in tool output. **Its output contains counts and masked structure only** (letters → `x`, digits → `9`), so it can be shared in issues. Exit code 1 on findings.
 
-## Entwicklung
+## Development
 
 ```bash
+bun install
 bun run typecheck
 bun test
 ```
 
-`scripts/probe*.ts` sind die Erkundungs-Skripte aus der Analysephase (Report nur mit Struktur, ohne Inhalte).
+- Architecture, invariants and conventions: [CONTRIBUTING.md](CONTRIBUTING.md), [CLAUDE.md](CLAUDE.md)
+- Specification: [docs/mcp-server-spec.md](docs/mcp-server-spec.md)
+- API findings: [docs/itslearning-api.md](docs/itslearning-api.md)
+- Roadmap: [docs/roadmap.md](docs/roadmap.md)
+- Changes: [CHANGELOG.md](CHANGELOG.md)
+
+`scripts/probe*.ts` are the exploration scripts used to map the API (their report contains structure only).
+
+## Security
+
+Please report vulnerabilities – especially redaction leaks – privately as described in [SECURITY.md](SECURITY.md). Never post real student data in issues.
+
+## License
+
+[MIT](LICENSE)

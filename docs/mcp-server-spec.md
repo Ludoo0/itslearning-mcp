@@ -1,595 +1,321 @@
-# itslearning-MCP-Server – Spezifikation v1
+# itslearning MCP server – specification (v0.1)
 
-Stand: 2026-11-16 · Status: Entwurf
-Grundlage: [`itslearning-api.md`](./itslearning-api.md) (verifizierte Endpunkte, ✅ = getestet, ⏳ = noch offen)
+As of 2026-11-17 · Status: implemented (v0.1.0)
+Based on: [`itslearning-api.md`](./itslearning-api.md) (verified endpoints, ✅ = tested, ⏳ = still open) · Open items: [`roadmap.md`](./roadmap.md)
 
 ---
 
-## 1. Ziel und Scope
+## 1. Goal and scope
 
-Ein MCP-Server, der KI-Agenten **lesenden** Zugriff auf ein itslearning-Konto gibt: Aufgaben, Neuigkeiten, Kurs-News, Nachrichten und Dateien. **Personenbezogene Daten werden geschwärzt**, bevor sie den Server verlassen.
+An MCP server that gives AI agents **read-only** access to an itslearning account: tasks, news, course announcements, messages and files. **Personal data is redacted** before it leaves the server.
 
-| In v1 | Nicht in v1 (Nicht-Ziele) |
+| In v0.1 | Not in v0.1 (non-goals) |
 |---|---|
-| Beliebige itslearning-Instanz (`ITSL_BASE_URL`) | Schreibende Aktionen (Nachrichten senden, Abgaben, Kommentare) |
-| Schülerkonten mit nativem Login (Benutzername/Passwort) | Instanzen mit Login über einen fremden Anbieter (Microsoft/Google/IServ/Feide …) |
-| Aufgaben, Neuigkeiten, Bulletins, Nachrichten, Dateien | Kalender (bei der Referenzinstanz ungenutzt; einfach nachrüstbar) |
-| Betrieb als Docker-Container | Eltern-Konten. **v2**: Die API hat `children/{childId}/…`-Endpunkte |
-| Ein Konto pro Container | Mehrere Konten pro Instanz (dafür einfach mehrere Container) |
+| Any itslearning instance (`ITSL_BASE_URL`) | Write actions (sending messages, submissions, comments) |
+| Student accounts with native login (user name/password) | Instances that only offer login via a third-party identity provider (Microsoft/Google/Feide/…) |
+| Tasks, news, bulletins, messages, course files, downloads | Calendar (unused at the reference instance; easy to add) |
+| Docker container or local process (stdio) | Parent accounts (the API has `children/{childId}/…` endpoints – see roadmap) |
+| One account per server process | Multiple accounts per process (run several containers instead) |
 
-**Grundsätze**
+**Principles**
 
-1. **Nur lesen.** Der Server ruft ausschließlich `GET`-Endpunkte auf, außerdem `POST /restapi/oauth2/token` für den Login.
-2. **Allowlist statt Durchreichen.** Jedes Tool gibt ein eigenes, schlankes DTO zurück, nie die Roh-Antwort der API.
-3. **Privacy by Default.** Unbekanntes wird geschwärzt; Geheimnisse (Tokens, signierte URLs) verlassen den Server nie.
-4. **Schonend.** Caching, wenige parallele Anfragen, keine Hintergrund-Abfragen ohne Tool-Aufruf.
+1. **Read-only.** The server only calls `GET` endpoints, plus `POST /restapi/oauth2/token` for login.
+2. **Allowlist instead of pass-through.** Every tool returns its own slim DTO, never the raw API response.
+3. **Privacy by default.** Unknown things are redacted; secrets (tokens, signed URLs) never leave the server.
+4. **Gentle on the instance.** Caching, few parallel requests, no background polling without a tool call.
 
 ---
 
-## 2. Architektur
+## 2. Architecture
 
 ```
-┌──────────────┐  MCP (Streamable HTTP / stdio)  ┌─────────────────────────────────────────────┐
-│  Agent/Client │ ─────────────────────────────▶ │ server ─▶ tools ─▶ redaction ─▶ DTOs         │
-└──────────────┘                                 │              │                               │
-                                                 │              ▼                               │
-                                                 │   api (REST, Bearer) ◀── auth (TokenStore)   │
-                                                 │   websession (SSO → Cookies → Download)      │
-                                                 │   cache (RAM + /data/files)  files (Text)    │
-                                                 └──────────────────────┬──────────────────────┘
+┌──────────────┐  MCP (Streamable HTTP / stdio)  ┌──────────────────────────────────────────────┐
+│ Agent/client │ ─────────────────────────────▶ │ server ─▶ tools ─▶ redaction ─▶ DTOs           │
+└──────────────┘                                 │              │                                 │
+                                                 │              ▼                                 │
+                                                 │   api (REST, Bearer) ◀── auth (TokenStore)     │
+                                                 │   websession (SSO → cookies → download)        │
+                                                 │   files (refs, cache, text extraction)         │
+                                                 └──────────────────────┬───────────────────────┘
                                                                         ▼
-                                                     https://<instanz>.itslearning.com
+                                                     https://<instance>.itslearning.com
 ```
 
-**Stack:** Bun ≥ 1.4, TypeScript (strict), `@modelcontextprotocol/sdk` (Streamable HTTP + stdio), `zod` (Eingabe-Schemas). Textextraktion mit `unpdf` (PDF) und `mammoth` (DOCX).
+**Stack:** Bun ≥ 1.4, TypeScript (strict), `@modelcontextprotocol/sdk` (Streamable HTTP + stdio), `zod` (input schemas). Text extraction with `unpdf` (PDF) and `mammoth` (DOCX). No build step – the server runs `bun src/server.ts`.
 
-**Module (`src/`)**
+**Modules (`src/`)**
 
-| Modul | Aufgabe | Übernommen aus |
-|---|---|---|
-| `config.ts` | Umgebungsvariablen + `*_FILE`-Secrets lesen und validieren (zod) | – |
-| `auth/tokenStore.ts` | Login, Refresh, Persistenz, Mutex | `scripts/lib.ts` (`loginWithPassword`, `refreshToken`) |
-| `api/client.ts` | REST-GET mit Bearer, Rate-Limit, Retry, Fehler-Mapping | `scripts/lib.ts` (`ItslearningClient`) |
-| `api/endpoints.ts` | Typisierte Aufrufe pro Endpunkt + `entities()`-Helfer (für verschachtelte Listen) | `scripts/probe2.ts` (`entities`) |
-| `websession/` | SSO-URL → Cookie-Jar → Element-Seite → iframe → `DownloadRedirect` | `scripts/probe2.ts` (`CookieJar`, `browse`, `extractLinks`, `describeFile`) |
-| `redaction/` | Personenauflösung, Pseudonyme, Lehrkräfte-Verzeichnis, Freitext-Ersetzung, Geheimnis-Filter | `scripts/probe2.ts` (`redactUrl`, `sanitizeError`) |
-| `files/` | fileRef-Registry, Download-Cache, Textextraktion | – |
-| `tools/` | Ein File pro Tool: zod-Schema, Handler, DTO-Mapping | – |
-| `server.ts` | MCP-Server, Transport (HTTP/stdio), `/healthz`, API-Key-Prüfung | – |
-| `log.ts` | Strukturiertes Logging mit Pflicht-Schwärzung | – |
+| Module | Responsibility |
+|---|---|
+| `server.ts` | Entry point, transport selection (`stdio` / `http`), shutdown |
+| `http.ts` | Stateless Streamable HTTP on `Bun.serve`, bearer API key, `/healthz`, origin check |
+| `app.ts` | Wiring (`createApp`), server instructions, tool registration |
+| `config.ts` | Environment variables + `*_FILE` secrets, validation (zod) |
+| `context.ts` | `AppContext`, `ensureReady()` (login, own account, name-dictionary warm-up) |
+| `auth/` | Token store (login, refresh, persistence, single-flight), login-mode detection |
+| `api/` | REST client (limiter, TTL cache, retries, error mapping), typed endpoints |
+| `websession/` | Minimal browser: manual redirects, cookie jar, size limit, link extraction |
+| `files/` | fileRefs, download service, disk cache, text extraction |
+| `redaction/` | Person registry, labels (en/de), teacher directory, name dictionary, secret/URL filters, HTML → text |
+| `tools/` | One module per tool group: zod schema, handler, DTO mapping |
+| `log.ts` | Structured logging to stderr with mandatory scrubbing |
 
 ---
 
-## 3. Konfiguration
+## 3. Configuration
 
-Alle Werte kommen aus Umgebungsvariablen. Für Geheimnisse gibt es jeweils eine `*_FILE`-Variante (Docker-Secrets); ist sie gesetzt, hat sie Vorrang.
+All values come from environment variables. Secrets also have a `*_FILE` variant (Docker secrets); if set, it takes precedence.
 
-| Variable | Pflicht | Default | Beschreibung |
+| Variable | Required | Default | Description |
 |---|---|---|---|
-| `ITSL_BASE_URL` | ✅ | – | z. B. `https://meineschule.itslearning.com` (ohne `/` am Ende) |
-| `ITSL_USERNAME` / `_FILE` | ✅ | – | itslearning-Benutzername |
-| `ITSL_PASSWORD` / `_FILE` | ✅ | – | itslearning-Passwort |
-| `ITSL_CLIENT_ID` | | `10ae9d30-1853-48ff-81cb-47b58a325685` | OAuth-Client-ID (öffentliche ID der Mobile-App) |
-| `MCP_TRANSPORT` | | `stdio` (Docker-Image: `http`) | `http` (Streamable HTTP) oder `stdio` |
-| `MCP_HOST` | | `127.0.0.1` (Docker-Image: `0.0.0.0`) | Bind-Adresse für HTTP |
-| `MCP_PORT` | | `3000` | Port für HTTP |
-| `MCP_ALLOWED_ORIGINS` | | leer | Erlaubte Browser-Origins (kommagetrennt); Anfragen mit anderem `Origin`-Header → 403 (DNS-Rebinding-Schutz) |
-| `MCP_API_KEY` / `_FILE` | ✅ bei `http` | – | Bearer-Key, den Clients senden müssen (≥ 32 Zeichen) |
-| `REDACTION_SECRET` / `_FILE` | | auto | HMAC-Secret für Pseudonyme. Fehlt es, wird es einmalig erzeugt und in `/data/secret` gespeichert |
-| `REDACT_TEACHERS` | | `false` | `true` → Lehrkräfte ebenfalls pseudonymisieren (`Lehrkraft-XXXX`) |
-| `TEACHER_ROLE_TITLES` | | `Lehrer,Lehrerin,Lehrkraft,Teacher,Mitarbeiter,Staff` | Werte von `RoleInHierarchyTitle`, die als Lehrkraft gelten ⏳ |
-| `DOWNLOAD_DIR` | | – | Optional: heruntergeladene Dateien zusätzlich hier ablegen (geschwärzter Dateiname) |
-| `MAX_FILE_MB` | | `25` | Größere Dateien werden abgelehnt |
-| `CACHE_TTL_S` | | `60` | Gültigkeit des Listen-Caches |
-| `MAX_CONCURRENCY` | | `2` | Parallele Anfragen an itslearning |
-| `MIN_REQUEST_INTERVAL_MS` | | `200` | Mindestabstand zwischen Anfragen |
-| `DATA_DIR` | | `/data` | Persistenz (State, Lehrkräfte, Datei-Cache) |
+| `ITSL_BASE_URL` | ✅ | – | e.g. `https://yourschool.itslearning.com` (no path) |
+| `ITSL_USERNAME` / `_FILE` | ✅ | – | itslearning user name |
+| `ITSL_PASSWORD` / `_FILE` | ✅ | – | itslearning password |
+| `ITSL_CLIENT_ID` | | `10ae9d30-1853-48ff-81cb-47b58a325685` | OAuth client ID (public ID of the official mobile app) |
+| `MCP_TRANSPORT` | | `stdio` (Docker image: `http`) | `stdio` or `http` (Streamable HTTP) |
+| `MCP_HOST` | | `127.0.0.1` (Docker image: `0.0.0.0`) | HTTP bind address |
+| `MCP_PORT` | | `3000` | HTTP port |
+| `MCP_API_KEY` / `_FILE` | ✅ with `http` | – | Bearer key clients must send (≥ 32 characters) |
+| `MCP_ALLOWED_ORIGINS` | | empty | Allowed browser origins (comma-separated); requests with any other `Origin` header → 403 (DNS-rebinding protection) |
+| `REDACTION_LANGUAGE` | | `en` | Language of labels and placeholders: `en` or `de` (see 6.2) |
+| `REDACTION_SECRET` / `_FILE` | | auto | HMAC secret for pseudonyms (≥ 16 characters). If missing, one is generated once and stored in `DATA_DIR/secret` |
+| `REDACTION_KEEP_WORDS` | | empty | Comma-separated words that are never replaced as a single name (see 6.4) |
+| `REDACT_TEACHERS` | | `false` | `true` → pseudonymise teachers as well (`Teacher-XXXX`) |
+| `TEACHER_ROLE_TITLES` | | `Teacher,Staff,Lehrer,Lehrerin,Lehrkraft,Mitarbeiter` | Role titles (`RoleInHierarchyTitle`, course `Role`) that count as teacher (substring match, case-insensitive) |
+| `MAX_FILE_MB` | | `25` | Larger files are rejected |
+| `CACHE_TTL_S` | | `60` | Lifetime of the list cache |
+| `MAX_CONCURRENCY` | | `2` | Parallel requests to itslearning |
+| `MIN_REQUEST_INTERVAL_MS` | | `200` | Minimum spacing between requests |
+| `DATA_DIR` | | `/data` | Persistence (login state, secret, teacher directory, file cache) |
+| `DOWNLOAD_DIR` | | – | Optional: additionally store downloaded files here (redacted file name) |
 | `LOG_LEVEL` | | `info` | `debug` \| `info` \| `warn` \| `error` |
 
-Ungültige Konfiguration → Start bricht mit verständlicher Fehlermeldung ab, ohne Secrets auszugeben.
+Invalid configuration → startup aborts with a clear error message that does not print secrets.
 
 ---
 
-## 4. Authentifizierung und Session
+## 4. Authentication and session
 
-### 4.1 Login und Start-Check
+### 4.1 Login and startup check
 
-1. Beim Start: Der Server liest `state.json` (falls vorhanden) und versucht einen Refresh.
-2. Fehlt `state.json` oder schlägt der Refresh fehl: Login per Passwort (`grant_type=password`).
-3. **Kompatibilitäts-Check** bei Fehlschlag:
-   - `401 InvalidUser` → „Benutzername oder Passwort falsch“.
-   - Andere Fehler → Der Server ruft die Login-Seite der Instanz auf und prüft, ob die Seite nur den Login über einen fremden Anbieter anbietet (`federatedLogin` ohne `nativeLogin`). Dann meldet er: „Diese Instanz verwendet Single Sign-on über einen fremden Anbieter; das wird in v1 nicht unterstützt.“
-4. Danach `GET /restapi/personal/person/v1` → `PersonId` des eigenen Kontos (für „Ich“) und Prüfung der Berechtigungs-Flags (`CanAccessCourses`, `CanAccessInstantMessageSystem`). Fehlende Berechtigungen deaktivieren die betroffenen Tools mit Hinweis.
+1. On startup the server reads `DATA_DIR/state.json` (if present) and tries a refresh.
+2. If there is no state or the refresh fails: password login (`grant_type=password`).
+3. **Compatibility check** on failure:
+   - `401 InvalidUser` → "user name or password wrong" (**fatal**, see 4.2).
+   - `Customer does not exist or is disabled` → "check ITSL_BASE_URL" (fatal).
+   - Other failures → the server fetches the instance's login page; if it only offers federated login (`federatedLogin` without `nativeLogin`) it reports `SSO_NOT_SUPPORTED`.
+4. Then `GET /person/v1` → the own `PersonId` (shown as "Me") and warm-up of the name dictionary with the participants of the 50 most recent message threads.
+5. The server starts even if login fails; tools then return the error in a structured way.
 
-### 4.2 Token-Lebenszyklus
+### 4.2 Token lifecycle
 
-- Access-Token gilt 300 s → **proaktiver Refresh 30 s vor Ablauf**.
-- **Der Refresh-Token ändert sich bei jedem Refresh.** Den neuen Token speichert der Server sofort und atomar (in eine temporäre Datei schreiben, dann umbenennen) in `DATA_DIR/state.json` (Rechte `0600`):
-  ```json
-  { "baseUrl": "...", "username": "...", "refreshToken": "...", "updatedAt": "..." }
-  ```
-  `baseUrl`/`username` passen nicht zur aktuellen Konfiguration → State verwerfen.
-- **Mutex:** Es läuft höchstens ein Refresh gleichzeitig; parallele Anfragen warten auf dessen Ergebnis.
-- Refresh schlägt fehl (z. B. widerrufen) → einmal Login per Passwort; schlägt auch das fehl → Tool-Fehler `AUTH_FAILED`.
-- `401` auf einer API-Anfrage → einmal Refresh und Wiederholung, dann Fehler.
+- Access tokens are valid for 300 s → **proactive refresh 30 s before expiry**.
+- **The refresh token rotates on every refresh.** The new token is persisted immediately and atomically (write temp file, rename) to `DATA_DIR/state.json` (mode `0600`): `{ baseUrl, username, refreshToken, updatedAt }`. State for a different `baseUrl`/`username` is ignored.
+- **Single flight:** at most one refresh at a time; parallel requests wait for its result.
+- Refresh fails (e.g. revoked) → one password login. If itslearning is down (5xx), the server does **not** fall back to the password.
+- **Wrong password is fatal:** no further login attempts until restart – a container restart loop must not lock the account.
+- `401` on an API request → one refresh + retry, then error.
 
-### 4.3 Web-Session (nur für Kurs-Dateien)
+### 4.3 Web session (course files only)
 
-- Wird bei Bedarf aufgebaut über `GET /restapi/personal/sso/url/v1?url=<ContentUrl>` (siehe `itslearning-api.md` → Dateien, Weg 2).
-- Ein Cookie-Jar pro Prozess, nur für `*.itslearning.com`. Nach 20 min Inaktivität oder bei einer Login-Seite im Ergebnis → neu aufbauen.
-- Höchstens ein Session-Aufbau gleichzeitig (Mutex).
+- Built on demand via `GET /restapi/personal/sso/url/v1?url=<ContentUrl>` (see `itslearning-api.md` → downloading files, path 2).
+- One cookie jar per process, only sent to `*.itslearning.com`. If the result is a login page, the session is rebuilt once.
 
 ---
 
 ## 5. Tools
 
-Konventionen:
-- Namen mit Präfix `itslearning_`. Alle Tools sind mit `readOnlyHint: true` annotiert.
-- IDs (Kurs, Aufgabe, Thread) sind die numerischen itslearning-IDs. Sie sind kein Klartext-Personenbezug und werden für Folgeaufrufe gebraucht. **Ausnahme:** `PersonId` wird nie ausgegeben.
-- **Dateien** werden nur über ein opaques `fileRef` referenziert (siehe 5.10).
-- Zeiten im Format ISO 8601 mit Zeitzone, dazu eine Variante in der Zeitzone des Kontos (`TimeZoneId` aus Person).
-- Listen haben `limit` (Default 20, max. 100) und geben `hasMore` zurück.
-- Ausgabe: `structuredContent` (JSON) und zusätzlich eine kurze Text-Zusammenfassung für Clients ohne Unterstützung für strukturierte Ausgabe.
+Conventions:
+- Names are prefixed `itslearning_`. All tools are annotated `readOnlyHint: true`.
+- IDs (course, task, thread, element) are numeric itslearning IDs, needed for follow-up calls. **`PersonId` is never emitted.**
+- **Files** are referenced only via `fileRef` (5.10).
+- Every result is returned as `structuredContent` **and** as text (summary + JSON). Everything an agent needs is in `structuredContent` – some clients (e.g. Claude Code) only show that part.
+- Errors: `isError: true` with a code (section 9).
 
-Gemeinsame Typen:
-
-```ts
-type Person = {
-  display: string;              // "Frau Müller" | "Lehrkraft Müller" | "Schüler:in-7F3A" | "Ich"
-  role: "teacher" | "student" | "self" | "unknown";
-};
-type CourseRef = { courseId: number; title: string };
-type FileRef = {
-  fileRef: string;              // opak, z. B. "f_9c1e…", nur auf diesem Server gültig
-  name: string;                 // geschwärzter Dateiname
-  kind: "file" | "image" | "link" | "unknown";
-};
-```
-
-### 5.1 `itslearning_overview`
-
-Einstieg für Agenten: „Was ist los?“
-
-| | |
-|---|---|
-| Eingabe | `{ days?: number = 7, newsSince?: string (ISO-Datum) = jetzt − 7 Tage }` |
-| Ausgabe | `{ dueSoon: Task[], overdue: Task[], news: NewsItem[], unreadThreads: number }` |
-| Endpunkte | `tasks/v1`, `notifications/stream/v2?showLightBulletins=true`, `instantmessages/messagethreads/v4` |
-
-`unreadThreads` wird aus `LastReadInstantMessageId < LastMessage.MessageId` berechnet, weil die Zähler-Endpunkte nicht existieren (404).
-
-### 5.2 `itslearning_list_courses`
-
-| | |
-|---|---|
-| Eingabe | `{ includeInactive?: boolean = false, starredOnly?: boolean = false }` |
-| Ausgabe | `{ courses: { courseId, title, code?, lastUpdated, newNotifications, newBulletins, starred }[] }` |
-| Endpunkte | `courses/v1` (aktiv), `courses/v2` (bei `includeInactive`, zusätzlich `active=false`), `courses/cards/starred/v1` |
-
-### 5.3 `itslearning_list_tasks`
-
-| | |
-|---|---|
-| Eingabe | `{ courseId?: number, status?: "open" \| "all" = "open", dueWithinDays?: number, homeworkOnly?: boolean, limit? }` |
-| Ausgabe | `{ tasks: Task[], hasMore }` |
-| Endpunkte | `tasks/v1` bzw. `courses/{courseId}/tasks/v1` ✅ |
+Common types:
 
 ```ts
-type Task = {
-  taskId: number; elementId: number; title: string;
-  course: string;                     // LocationTitle
-  courseId?: number;                  // LocationId, wenn LocationType = Course
-  deadline: string | null; status: string; homework: boolean;
-  type: "assignment" | "activity" | "other";  // LearningToolElement | CustomActivity | sonst
-  descriptionPreview?: string;        // geschwärzt, max. 300 Zeichen
-};
+type Person = { display: string; role: "self" | "teacher" | "student" | "unknown" };
+type FileRefDto = { fileRef: string; name: string; kind: "file" | "image" | "unknown" };
 ```
 
-### 5.4 `itslearning_get_task`
+| # | Tool | Input | Output (main fields) | Endpoints |
+|---|---|---|---|---|
+| 5.1 | `itslearning_overview` | `days` (7), `newsSince?`, `overdueMaxAgeDays` (60) | `overdue[]`, `dueSoon[]`, `news[]`, `unreadThreads`, `unreadThreadsPreview[]` | tasks, stream, threads |
+| 5.2 | `itslearning_list_courses` | `includeInactive`, `starredOnly` | `courses[]{courseId, title, code?, lastUpdated, newNotifications, newBulletins, starred, active}` | `courses/v1`, `v2`, `cards/starred` |
+| 5.3 | `itslearning_list_tasks` | `courseId?`, `status` (open\|all), `dueWithinDays?`, `homeworkOnly`, `activeCoursesOnly`, `limit`, `offset` | `tasks[]`, `total`, `hasMore` | `tasks/v1`, `courses/{id}/tasks/v1` |
+| 5.4 | `itslearning_get_task` | `elementId` | task + `text`, `mandatory`, `submissionType`, `completionMode`, `lateSubmissionAllowed`, `hasAnswer`, `canSubmit`, `files[]`, `detailsUnavailable` | `assignments/{id}/v1` |
+| 5.5 | `itslearning_list_news` | `courseId?`, `since?`, `limit` | `items[]{id, published, course, courseId?, author, text, kind, elementId?, fileRef?, bulletinId?, images?}`, `hasMore` | `notifications/stream/v2`, `courses/{id}/stream/v1` |
+| 5.6 | `itslearning_list_bulletins` | `courseId`, `limit`, `offset`, `includeResources` | `bulletins[]{id, published, activeUntil, author, text, pinned, link?, images[], resources[], commentsCount}`, `total`, `hasMore` | `courses/{id}/bulletins/v1`, `courses/bulletins/{id}/elements/v1` |
+| 5.7 | `itslearning_list_message_threads` | `limit`, `unreadOnly`, `type?`, `cursor?` | `threads[]{threadId, title, type, participants[], participantsCount, lastMessage, unread}`, `hasMore`, `nextCursor?` | `messagethreads/v4` |
+| 5.8 | `itslearning_get_message_thread` | `threadId`, `limit`, `beforeMessageId?` | `messages[]{messageId, at, from, text, edited, deleted, system, attachment?, link?}`, `hasMore` | `messagethreads/{id}/messages/v3` |
+| 5.9 | `itslearning_list_course_files` | `courseId`, `folderId?`, `recursive`, `maxDepth` | `items[]{elementId, title, kind, elementType, path, depth, parentFolderId?, homework, active, fileRef?}`, `truncated` | `courses/{id}/resources/v1`, `folders/{id}/resources/v1` |
+| 5.10 | `itslearning_download_file` | `fileRef`, `mode` (auto\|text\|blob\|both), `maxTextChars` | metadata + `text` (redacted) and/or file/image content | see 5.10 |
 
-| | |
-|---|---|
-| Eingabe | `{ elementId: number }` |
-| Ausgabe | `Task & { text: string /* geschwärzt, HTML→Markdown */, submissionType, completionMode, mandatory, lateSubmissionAllowed, hasAnswer, canSubmit, files: FileRef[] }` |
-| Endpunkte | `assignments/{elementId}/v1` ✅. Bei `403` (CustomActivity) → nur Basisdaten aus der Aufgabenliste + Hinweis `detailsUnavailable: true` |
+Details:
 
-`files` entsteht aus `Files[]`/`TemplateFile` → fileRef über `assignments/{id}/files/{fileId}/v1` ⏳.
+- **Overview (5.1):** `overdue` only contains tasks from **active courses** whose deadline is at most `overdueMaxAgeDays` in the past – old, never-completed tasks from previous school years are noise for agents. Message threads are loaded first so their participants are known before task/news text is redacted. `unreadThreads` is computed from `LastReadInstantMessageId < LastMessage.MessageId` (the unread-count endpoints are not deployed).
+- **Tasks (5.3/5.4):** sorted by deadline (none last). "Open" = status does not look completed. `activeCoursesOnly` restricts to tasks of `courses/v1`. If `assignments/{id}/v1` refuses access (e.g. `CustomActivity`, polls), `get_task` returns the list data with `detailsUnavailable: true`.
+- **Threads (5.7):** title = thread name (redacted) → course recipients → for one-to-one/small groups the participant labels → for larger groups `Group (N participants) with Teacher X`. Groups with more than 5 participants only list teachers. `total` is only returned when itslearning provides a meaningful value (the API always reports 0 for threads/messages); `hasMore` is authoritative.
+- **Messages (5.8):** chronological; deleted messages have empty text; attachments become `fileRef`s.
 
-### 5.5 `itslearning_list_news`
+### 5.10 Files
 
-| | |
-|---|---|
-| Eingabe | `{ courseId?: number, since?: string, limit? }` |
-| Ausgabe | `{ items: NewsItem[], hasMore }` |
-| Endpunkte | `notifications/stream/v2?showLightBulletins=true` ✅ bzw. `courses/{id}/stream/v1?showLightBulletins=true` ✅ |
+**fileRefs** contain only itslearning IDs (no secrets) and are resolvable **statelessly**, i.e. also after a restart:
 
-```ts
-type NewsItem = {
-  id: number; published: string; course: string; author: Person;
-  text: string;                 // geschwärzt
-  kind: "bulletin" | "element" | "other";
-  elementId?: number;           // z. B. neue Ressource/Aufgabe → weiterführendes Tool
-  attachments: FileRef[];       // Bilder des Light Bulletins
-};
-```
-
-### 5.6 `itslearning_list_bulletins`
-
-| | |
-|---|---|
-| Eingabe | `{ courseId: number, limit? }` |
-| Ausgabe | `{ bulletins: { id, published, author: Person, text, pinned, link?: string, images: FileRef[], resources: FileRef[], commentsCount }[], hasMore }` |
-| Endpunkte | `courses/{id}/bulletins/v1` ✅, für `HasResources` zusätzlich `courses/bulletins/{id}/elements/v1` ✅ |
-
-`link` (`EmbedUrl`) wird nur ausgegeben, wenn es eine externe URL ohne Personenbezug ist (keine itslearning-Profil- oder Session-URL).
-
-### 5.7 `itslearning_list_message_threads`
-
-| | |
-|---|---|
-| Eingabe | `{ limit?, unreadOnly?: boolean = false, type?: "OneToOne" \| "Group" \| "Course" }` |
-| Ausgabe | `{ threads: { threadId, title, type, participants: Person[], participantsCount, lastMessage: { at, from: Person, preview }, unread }[], hasMore }` |
-| Endpunkte | `instantmessages/messagethreads/v4` ✅ |
-
-`title`: Thread-Namen sind oft Personennamen → durch das Namens-Wörterbuch ersetzen. Ist der Name leer, wird ein Titel aus den Teilnehmer-Displays gebildet (`"Frau Müller, Ich"`). Bei mehr als 5 Teilnehmern gibt der Server nur Lehrkräfte + `participantsCount` aus.
-
-### 5.8 `itslearning_get_message_thread`
-
-| | |
-|---|---|
-| Eingabe | `{ threadId: number, limit? = 30, beforeMessageId?: number }` |
-| Ausgabe | `{ threadId, title, messages: { messageId, at, from: Person, text, edited, deleted, system, attachment?: FileRef }[], hasMore }` |
-| Endpunkte | `instantmessages/messagethreads/{id}/messages/v3?pageSize=&fromId=` ✅ |
-
-### 5.9 `itslearning_list_course_files`
-
-| | |
-|---|---|
-| Eingabe | `{ courseId: number, folderId?: number, recursive?: boolean = false, maxDepth?: number = 3 }` |
-| Ausgabe | `{ items: { elementId, title, kind: "folder" \| "file" \| "link" \| "page" \| "test" \| "unknown", path, homework, active, fileRef?: string }[] }` |
-| Endpunkte | `courses/{id}/resources/v1` ✅, `courses/{id}/folders/{folderId}/resources/v1` ✅ |
-
-`kind` aus `ElementType` (`Folder`) bzw. Mapping von `LearningToolId` ⏳. Solange das Mapping fehlt, erhält jedes `LearningToolElement` ein `fileRef` mit `kind: "unknown"`, und erst `download_file` stellt fest, ob es eine Datei ist. Rekursion höchstens bis `maxDepth` und mit einem harten Limit von 300 Elementen.
-
-### 5.10 `itslearning_download_file`
-
-| | |
-|---|---|
-| Eingabe | `{ fileRef: string, mode?: "auto" | "text" | "blob" | "both" = "auto", maxTextChars?: number = 50000 }` |
-| Ausgabe | `structuredContent: { fileRef, kind, name, mimeType, sizeBytes, cached, textIncluded, textChars?, textTruncated?, blobIncluded, savedTo? }` + Content-Blöcke: Text (geschwärzt) und/oder `image` bzw. `resource` (`blob`, base64) |
-| `mode=auto` | PDF/DOCX/Text → nur geschwärzter Text (Datenschutz-Default, spart Tokens) · Bilder → `image` · sonst → `resource` |
-| Wege | (a) filerepository-URL direkt ✅ · (b) Kurs-Element über Web-Session → `DownloadRedirect.ashx` ✅ · (c) `assignments/{id}/files/{fileId}/v1` ⏳ |
-
-**fileRefs** (`files/refs.ts`, umgesetzt in M3): Referenzen enthalten nur itslearning-IDs (keine Geheimnisse) und sind **zustandslos auflösbar**, also auch nach einem Neustart gültig:
-
-| fileRef | Quelle | Auflösung |
+| fileRef | Source | Resolution |
 |---|---|---|
-| `e_<elementId>` | Kurs-Element | `courses/resources/{id}/v1` → SSO → Web-Session → `DownloadRedirect` |
-| `a_<elementId>_<fileId>` | Aufgaben-Anhang | `assignments/{id}/files/{fileId}/v1` (302) |
-| `m_<threadId>_<messageId>` | Nachrichten-Anhang | `AttachmentUrl` (aus Speicher oder durch erneutes Laden des Threads) |
-| `i_<courseId>_<bulletinId>_<n>` | Bulletin-Bild | `OriginalFileUrl` (aus Speicher oder durch erneutes Laden der Bulletins) |
+| `e_<elementId>` | course element | `courses/resources/{id}/v1` → SSO → web session → (iframes) → `DownloadRedirect` |
+| `a_<elementId>_<fileId>` | task attachment | `assignments/{id}/files/{fileId}/v1` (302) ⏳ |
+| `m_<threadId>_<messageId>` | message attachment | `AttachmentUrl` (remembered or re-read from the thread) |
+| `i_<courseId>_<bulletinId>_<n>` | bulletin image | `OriginalFileUrl` (remembered or re-read from the bulletins) |
 
-Die geheimen URLs werden nur im Speicher des FileService gehalten. Ein unbekanntes Format bzw. ein nicht mehr auffindbarer Anhang → `FILE_REF_UNKNOWN`. Der Server nutzt ausschließlich die Rechte des Kontos, ein selbst gebautes fileRef gibt also keinen zusätzlichen Zugriff.
+Secret URLs stay inside the `FileService`. A hand-crafted fileRef grants no extra access – the server only uses the account's own permissions.
 
-**Verhalten:**
-- Größer als `MAX_FILE_MB` → Fehler `FILE_TOO_LARGE`, ohne Download.
-- Ergebnis ist keine Datei (HTML ohne Download-Link, z. B. Link, Notiz oder Test) → `{ kind: "page", title, text }` mit geschwärztem Seitentext, aber **keine URL**.
-- **Vor dem Download** registriert der Server alle Personen, die im Dokument stehen könnten: Kurs-Teilnehmer:innen (`courses/{id}/participants/v1` ⏳, best effort) bzw. Thread-Teilnehmer:innen.
-- Optional `DOWNLOAD_DIR`: Datei wird zusätzlich als `<fileRef>_<geschwärzter Name>` abgelegt (`savedTo`).
-- Cache: `DATA_DIR/files/<sha256(fileRef)>` + Metadaten; gültig, solange `LastUpdated` des Elements unverändert ist (bei direkten URLs: 24 h).
-- Textextraktion: PDF (`unpdf`), DOCX (`mammoth`), `text/*`, Markdown. Andere Typen nur als Blob. Danach läuft der Text durch die Freitext-Schwärzung (6.4).
-- Dateiname: Wörterbuch-Ersetzung + Regex. Die Endung bleibt erhalten.
-- **Bekannte Grenze:** Den Inhalt der Datei im Blob schwärzt der Server nicht. Eine PDF-Datei kann also Namen enthalten. Das steht in der Tool-Beschreibung, damit der Client bzw. Nutzer das weiß. Deshalb liefert `mode=auto` für PDF/DOCX/Text standardmäßig **nur den geschwärzten Text**; die Datei selbst gibt es nur bei Bildern, nicht extrahierbaren Formaten oder ausdrücklich mit `mode=blob|both`.
+**Behaviour:**
+- `mode=auto` (default): PDF/DOCX/text → **redacted text only** (privacy default, saves tokens); images → image content; other formats → file content (`resource` blob).
+- The extracted text is part of `structuredContent.text` (and additionally a text content block).
+- Files larger than `MAX_FILE_MB` → `FILE_TOO_LARGE`.
+- Elements that are not files (links, notes, tests) → `kind: "page"` with the redacted page text, **never a URL**.
+- **Before** a download the server registers everyone who might appear in the document: course participants (`courses/{id}/participants/v1`, best effort) or thread participants.
+- Disk cache in `DATA_DIR/files` (24 h, max. 500 MB, oldest first).
+- `DOWNLOAD_DIR`: the file is additionally stored as `<fileRef>_<redacted name>` (`savedTo`).
+- **Known limit:** file/image *content* (blob) is not redacted – only extracted text is. Tool descriptions say so.
 
 ---
 
-## 6. Schwärzung
+## 6. Redaction
 
-Kernkapitel. Implementiert in `src/redaction/`, vollständig unit-getestet.
+Implemented in `src/redaction/`, fully unit-tested.
 
-### 6.1 Personen-Registry
+### 6.1 Person registry
 
-Jede Person, die in einer API-Antwort auftaucht, wird über ihre `PersonId` registriert. Quellen:
+Every person appearing in an API response is registered by `PersonId`:
 
-| Quelle | Felder | Rolle |
+| Source | Role hint |
+|---|---|
+| `person/v1` | `self` |
+| Thread `Participants[]` (`RoleInHierarchyTitle`) | teacher/student via `TEACHER_ROLE_TITLES` |
+| Thread `CreatedByTeacher` | teacher |
+| Course participants (`Role`) | teacher/student via `TEACHER_ROLE_TITLES`; `FullName` split as "Last, First" or "First … Last" |
+| Bulletin `PublishedBy` | weak teacher hint (only if not known as student) |
+| Stream/newsfeed `PublishedBy`, message `CreatedByName` | names only |
+
+Once a person is known as a teacher, this is remembered across restarts via `teachers.json`.
+
+### 6.2 Labels (`REDACTION_LANGUAGE`)
+
+| Role | `en` (default) | `de` |
 |---|---|---|
-| `person/v1` | eigene `PersonId` | `self` |
-| Thread-`Participants[]` | `PersonId, FirstName, LastName, FullName, RoleInHierarchyTitle` | aus `RoleInHierarchyTitle` (`TEACHER_ROLE_TITLES`) |
-| Nachrichten | `CreatedBy` (ID), `CreatedByName`, `CreatedByShortName` | aus Teilnehmerliste / Thread-`CreatedByTeacher` |
-| `PublishedBy` (Stream, Bulletins, Newsfeed) | `PersonId, FirstName, LastName, FullName` | **Bulletins:** `teacher` (Annahme ⏳: Bulletins posten in der Regel nur Lehrkräfte. Gilt nur, wenn die Person nicht anderswo als Schüler:in erkannt wurde) · sonst bisherige Rolle bzw. `unknown` |
+| own account | `Me` | `Ich` |
+| teacher with salutation | `Mrs Müller` | `Frau Müller` |
+| teacher without salutation | `Teacher Müller` | `Lehrkraft Müller` |
+| teacher with `REDACT_TEACHERS=true` | `Teacher-7F3A` | `Lehrkraft-7F3A` |
+| student | `Student-7F3A` | `Schüler:in-7F3A` |
+| unknown role | `Person-7F3A` | `Person-7F3A` |
 
-Rollenregeln:
-- Wurde eine Person einmal sicher als Lehrkraft erkannt, bleibt sie Lehrkraft, auch über Neustarts (gespeichert in `teachers.json`).
-- `unknown` wird **wie `student` geschützt** (Pseudonym), aber als `Person-XXXX` angezeigt.
-- **Vorwärmen:** Nach dem Login lädt der Server einmalig die neuesten 50 Unterhaltungen und registriert deren Teilnehmer:innen, damit deren Namen auch in Aufgaben- und Neuigkeiten-Texten erkannt werden.
-- `Frau/Herr <Nachname>`-Varianten kommen nur für Lehrkräfte ins Wörterbuch (sonst Kollisionen mit gleichnamigen Schüler:innen). Mehrdeutige Schreibweisen (zwei Personen, gleicher Name) werden zu `[Name]`.
+Placeholders: `[email]`, `[phone]`, `[itslearning link]`, `[link removed]`, `[encoded data removed]`, `[name]` (de: `[E-Mail]`, `[Telefon]`, `[itslearning-Link]`, `[Link entfernt]`, `[kodierte Daten entfernt]`, `[Name]`).
 
-### 6.2 Anzeige
+The 4-character pseudonym is the start of `HMAC-SHA256(REDACTION_SECRET, baseUrl | PersonId)`; on collision it is extended to 6 characters. Pseudonyms are stable across restarts.
 
-| Rolle | Anzeige | Beispiel |
-|---|---|---|
-| `self` | `Ich` | `Ich` |
-| `teacher` (Anrede gepflegt) | `<Anrede> <Nachname>` | `Frau Müller` |
-| `teacher` (Anrede leer) | `Lehrkraft <Nachname>` | `Lehrkraft Müller` |
-| `teacher` mit `REDACT_TEACHERS=true` | `Lehrkraft-<hash4>` | `Lehrkraft-A3F2` |
-| `student` | `Schüler:in-<hash4>` | `Schüler:in-7F3A` |
-| `unknown` | `Person-<hash4>` (gleich geschützt wie Schüler:innen, aber ohne falsche Rollenbehauptung) | `Person-7F3A` |
-
-`hash4` = die ersten 4 Hex-Zeichen von `HMAC-SHA256(REDACTION_SECRET, baseUrl + PersonId)`, großgeschrieben. Bei Kollisionen innerhalb der Registry wird der Wert auf 6 Zeichen verlängert. Das Pseudonym bleibt über Neustarts gleich.
-
-**Lehrkräfte-Verzeichnis `DATA_DIR/teachers.json`:** Der Server legt es automatisch an und ergänzt es; der Nutzer pflegt die Anrede:
+**Teacher directory `DATA_DIR/teachers.json`** – created and extended automatically, maintained by the user:
 
 ```json
-{
-  "_hinweis": "anrede eintragen: \"Frau\", \"Herr\" oder leer lassen (→ \"Lehrkraft <Nachname>\")",
-  "teachers": [
-    { "id": "A3F2", "lastName": "Müller", "anrede": "Frau" },
-    { "id": "B71C", "lastName": "Schmidt", "anrede": "" }
-  ]
-}
+{ "teachers": [ { "id": "A3F2C1D0", "lastName": "Müller", "salutation": "Mrs" } ] }
 ```
 
-- `id` ist das Pseudonym (keine `PersonId` in der Datei). Vornamen werden **nicht** gespeichert.
-- Der Server lädt die Datei neu, wenn sie sich ändert (Watch auf Änderungszeit). Ein Neustart ist nicht nötig.
-- **Keine Ableitung der Anrede aus dem Vornamen.** Die API liefert kein Geschlecht, und Raten wäre fehleranfällig.
+- `id` is a pseudonym key (no `PersonId`), no first names are stored.
+- The legacy field `anrede` is still read.
+- Changes are picked up without restart (mtime check). A broken file is never overwritten.
+- The salutation is never guessed from first names – the API has no gender information.
 
-### 6.3 Strukturfelder (DTO-Allowlist)
+### 6.3 Structured fields
 
-DTOs enthalten Personen nur als `Person` (6.2). Nie ausgegeben werden: `PersonId`, `FirstName`, `LastName`, `FullName`, `CreatedByName`, `CreatedByShortName`, `ProfileUrl`, `ProfileImageUrl*`, `CreatedByAvatar`, `HomeOrganization`, `AdditionalInfo`, `ExtraUserInformation`, `iCalUrl*`, sowie alle URLs außer den in 6.5 erlaubten.
+DTOs contain people only as `Person`. Never emitted: `PersonId`, first/last/full names, `CreatedByName`, profile and avatar URLs, `HomeOrganization`, `iCalUrl*`, and every URL except those allowed in 6.5.
 
-### 6.4 Freitext
+### 6.4 Free text
 
-Gilt für: `Text`, `RawText`, `Description`, Thread-Namen, `AttachmentName`, `LinkTitle`, `LocationRecipients[].Title`, Dateinamen, extrahierte Dateitexte.
+Applies to: `Text`, `RawText`, `Description`, thread names, attachment names, link titles, file names, extracted file text, page text.
 
-Pipeline (Reihenfolge wichtig):
-1. **HTML → Markdown** (einfacher Konverter; `<a href>` wird zu `[Text](erlaubte URL)` oder nur `Text`).
-2. **Geheimnis-Filter** (6.5) auf alle URLs im Text.
-3. **Namens-Wörterbuch:** Aus der Registry werden für jede Person Ersetzungen gebaut:
-   - `FullName`, `Vorname Nachname`, `Nachname, Vorname`, `CreatedByShortName` → Anzeige der Person
-   - `Anrede Nachname` (z. B. „Frau Müller“) → Anzeige der Person (bei Lehrkräften identisch, bei `REDACT_TEACHERS` Pseudonym)
-   - Einzelner **Nachname** → Anzeige; einzelner **Vorname** → Anzeige, aber nur, wenn er ≥ 3 Zeichen hat und kein häufiges deutsches Wort ist (kleine Stoppliste, z. B. „Mai“, „Rose“, „Klein“, „Wolf“ …)
-   - Wortgrenzen-basiert, ohne Beachtung von Groß-/Kleinschreibung, Unicode-fähig (`\p{L}`), längste Treffer zuerst
-4. **Regex:**
-   - E-Mail → `[E-Mail]`
-   - Telefonnummern (≥ 7 Ziffern mit Trennzeichen) → `[Telefon]`
-   - itslearning-Profil-URLs → entfernt
-   - `@Mentions` → über das Wörterbuch auflösen, sonst `@[Person]`
-5. **Begrenzung der Länge** je nach Tool.
+Pipeline:
+1. HTML → text/Markdown (scripts/styles removed, links only kept if shareable).
+2. URL filters (6.5), URL-encoded data blobs → `[encoded data removed]`, ID pairs (`PersonId=123`, `"UserId": 5`) → `[ID]`.
+3. E-mail addresses and phone numbers.
+4. **Name dictionary** from the registry: full name, "First Last", "Last, First", "F. Last", short name; for teachers also salutation variants ("Mrs/Mr/Ms/Frau/Herr Last"); single first/last names if ≥ 3 characters and not a stop word or in `REDACTION_KEEP_WORDS`. Word-boundary based, case-insensitive, Unicode-aware, longest match first. The same spelling for two different people → `[name]`.
+5. Length limit per tool.
 
-Das eigene Konto (`self`) wird ebenfalls ersetzt (`Ich`), damit der Klarname des Kindes nie herausgeht.
+**`REDACTION_KEEP_WORDS` trade-off:** a person's last name can also be an ordinary word (e.g. a place adjective in an event title), which then gets replaced everywhere. Listing it keeps the word – but then it is also kept where it really refers to that person.
 
-### 6.5 Geheimnisse und URLs
+### 6.5 Secrets and URLs
 
-**Nie ausgeben, nie loggen:**
-- Access- und Refresh-Token, Passwort
-- `iCalUrl`
-- SSO-URLs (`MobileAppLoginSso`, `ProcessLogin`, `LoginSSO.aspx`), `File/View.aspx`- und `ViewFile.aspx`-URLs (die enthalten Name, E-Mail und Benutzername als Query-Parameter)
-- `filerepository.itslearning.com/…?Token=` und signierte `filecache`-URLs
-- Alle Query-Parameter namens `Token`, `Signature`, `Hash`, `sign`, `ApiSessionId`, `Guid`
+**Never emitted, never logged:** access/refresh tokens, password, API key, `iCalUrl`, SSO and session URLs (`MobileAppLoginSso`, `ProcessLogin`, `LoginSSO.aspx`, `File/View.aspx`, …), `filerepository` URLs with `Token`, signed `filecache` URLs.
 
-**Erlaubte URLs in Ausgaben:**
-- Externe Links aus Inhalten (z. B. `EmbedUrl`, Links in Texten), sofern sie nicht auf `*.itslearning.com` zeigen und keine der oben genannten Parameter enthalten. Begründung: Sie sind Inhalt (z. B. Arbeitsblatt-Link) und für Agenten nützlich.
-- Keine itslearning-Deep-Links. Agenten nutzen IDs + Tools.
+**Shareable** are only external `http(s)` links (not `*.itslearning.com`) whose parameter **names and values** are unsuspicious: no secret parameter names, no JSON/markup, no person IDs, no values longer than 200 characters. Relative itslearning links (`….aspx?…`) are removed as well.
 
 ### 6.6 Logging
 
-- Der Logger ersetzt vor der Ausgabe die Werte bekannter Geheimnisse (aktuelle Tokens, Passwort, API-Key) und wendet `redactUrl`/`sanitizeError` an.
-- Inhalte (Texte, Namen) werden auch auf `debug` nicht geloggt, nur Endpunkt-Template, Status und Dauer.
+The logger replaces registered secrets (password, tokens, API key) and reduces URLs to patterns. Content (texts, names) is not logged, not even at `debug`.
 
-### 6.7 Grenzen (in der README zu dokumentieren)
+### 6.7 Limits
 
-- Namen, die in keinem Strukturfeld vorkamen (z. B. Eltern, Personen außerhalb der Kurse), werden in Freitexten nicht erkannt.
-- Namen in Bildern, Scans und im Datei-Blob werden nicht geschwärzt.
-- Pseudonymisierung ist keine Anonymisierung (DSGVO). Die Schwärzung senkt das Risiko, ersetzt aber nicht die Entscheidung, welche Daten an ein Cloud-LLM gehen.
+- Names that never appeared in a structured field (e.g. parents, people outside the courses) are not detected in free text.
+- Names in images, scans and file blobs are not redacted.
+- Pseudonymisation is not anonymisation (GDPR).
 
 ---
 
-## 7. Caching und Schonung von itslearning
+## 7. Caching and rate limiting
 
-| Was | Wie |
+| What | How |
 |---|---|
-| Listen (Kurse, Aufgaben, Stream, Threads …) | RAM-Cache, Schlüssel = Endpunkt + Parameter, TTL `CACHE_TTL_S` (60 s) |
-| Person, Kursliste | TTL 15 min |
-| Dateien | Festplatten-Cache in `DATA_DIR/files`, max. 500 MB, LRU |
-| Parallelität | höchstens `MAX_CONCURRENCY` (2) Anfragen gleichzeitig, mindestens `MIN_REQUEST_INTERVAL_MS` (200 ms) Abstand |
-| Retry | `429`/`5xx`/Netzwerkfehler: 3 Versuche, exponentielles Backoff (0,5 s → 1 s → 2 s), `Retry-After` beachten |
-| Paging | `limit` wird auf API-`PageSize` abgebildet; keine automatischen Voll-Abrufe über alle Seiten |
-| Hintergrund | keine Abfragen ohne Tool-Aufruf |
+| Lists | in-memory TTL cache (`CACHE_TTL_S`, 60 s); in-flight requests are shared |
+| Person, courses, course participants | 15 min |
+| Files | disk cache `DATA_DIR/files`, 24 h, max. 500 MB |
+| Concurrency | `MAX_CONCURRENCY` (2) requests, `MIN_REQUEST_INTERVAL_MS` (200 ms) spacing – shared by REST API and web session |
+| Retries | `429`/`5xx`/network: 3 attempts, exponential backoff, `Retry-After` honoured |
+| Background | no requests without a tool call (except the one-time warm-up after login) |
 
 ---
 
-## 8. Transport und Betrieb (Docker)
+## 8. Transport and operation
 
-### 8.1 Transport
+### 8.1 Transports
 
-- **`http`:** MCP Streamable HTTP unter `POST /mcp`, **zustandslos** mit JSON-Antworten (kein SSE, keine Sessions; `GET`/`DELETE` → 405). Pro Anfrage ein frischer `McpServer` über dem gemeinsamen Kontext – Login, Caches und Personen-Registry bleiben erhalten. Umgesetzt mit dem Web-Standard-Transport des SDK direkt auf `Bun.serve` (Body-Limit 1 MB).
-  - Jeder Request braucht `Authorization: Bearer <MCP_API_KEY>`. Der Vergleich läuft zeitkonstant (`timingSafeEqual`).
-  - `GET /healthz` ohne Auth → `200 {"status":"ok"}` (keine Details).
-  - Kein TLS im Container. Für Zugriff von außerhalb von localhost: Reverse-Proxy (Caddy/Traefik) mit TLS davor. In der Compose-Vorlage ist der Port standardmäßig an `127.0.0.1` gebunden.
-- **`stdio`:** für lokale Clients über `docker run -i --rm …`. Kein API-Key nötig.
+- **`stdio`** (default): for local clients (`bun src/server.ts` or `docker run -i`).
+- **`http`**: Streamable HTTP at `POST /mcp`, **stateless** with JSON responses (no SSE, no sessions; `GET`/`DELETE` → 405). A fresh `McpServer` per request on top of the shared context – login, caches and person registry persist. Implemented with the SDK's web-standard transport directly on `Bun.serve` (1 MB body limit).
+  - Every request needs `Authorization: Bearer <MCP_API_KEY>` (constant-time comparison).
+  - `GET /healthz` without auth → `200 {"status":"ok"}`.
+  - Requests with a browser `Origin` not in `MCP_ALLOWED_ORIGINS` → 403.
+  - No TLS in the container – bind to localhost or put a TLS reverse proxy in front.
 
-### 8.2 Dockerfile (Skizze – umgesetzt in `Dockerfile`: ohne Bundling, da unpdf/mammoth dynamisch geladen werden; Image ~220 MB)
+### 8.2 Docker
 
-```dockerfile
-FROM oven/bun:1-alpine AS build
-WORKDIR /app
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production
-COPY src ./src
-RUN bun build src/server.ts --target=bun --outdir=dist
-
-FROM oven/bun:1-alpine
-WORKDIR /app
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules ./node_modules
-RUN mkdir -p /data && chown bun:bun /data
-USER bun
-VOLUME /data
-ENV MCP_TRANSPORT=http MCP_PORT=3000 DATA_DIR=/data
-EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
-CMD ["bun", "dist/server.js"]
-```
-
-### 8.3 `compose.yaml` (Vorlage – umgesetzt in `compose.yaml`, Secrets-Vorlagen in `secrets.example/`)
-
-```yaml
-services:
-  itslearning-mcp:
-    build: .
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      ITSL_BASE_URL: https://meineschule.itslearning.com
-      ITSL_USERNAME_FILE: /run/secrets/itsl_username
-      ITSL_PASSWORD_FILE: /run/secrets/itsl_password
-      MCP_API_KEY_FILE: /run/secrets/mcp_api_key
-    secrets: [itsl_username, itsl_password, mcp_api_key]
-    volumes:
-      - itsl-data:/data
-    read_only: true
-    tmpfs: [/tmp]
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-
-secrets:
-  itsl_username: { file: ./secrets/itsl_username }
-  itsl_password: { file: ./secrets/itsl_password }
-  mcp_api_key:   { file: ./secrets/mcp_api_key }
-
-volumes:
-  itsl-data:
-```
-
-`teachers.json` pflegen: `docker compose exec itslearning-mcp vi /data/teachers.json`. Alternativ wird `/data` als Bind-Mount eingebunden.
-
-### 8.4 Client-Konfiguration (Beispiele)
-
-Claude Code über HTTP:
-```bash
-claude mcp add --transport http itslearning http://127.0.0.1:3000/mcp \
-  --header "Authorization: Bearer $(cat secrets/mcp_api_key)"
-```
-
-Claude Desktop über stdio (`claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "itslearning": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "--env-file", "C:/pfad/itslearning.env",
-               "-e", "MCP_TRANSPORT=stdio", "-v", "itsl-data:/data", "itslearning-mcp"]
-    }
-  }
-}
-```
+- `Dockerfile`: `oven/bun:1-alpine`, no bundling (unpdf/mammoth are imported dynamically), runs as user `bun` (UID 1000), `VOLUME /data`, `HEALTHCHECK` on `/healthz`, defaults `MCP_TRANSPORT=http`, `MCP_HOST=0.0.0.0`. Image size ~220 MB.
+- `compose.yaml`: port bound to `127.0.0.1:3000`, credentials and API key as file-based secrets from `./secrets/`, read-only root filesystem, `tmpfs /tmp`, all capabilities dropped, `no-new-privileges`.
+- Images are published to GHCR on version tags: `ghcr.io/ludoo0/itslearning-mcp:<version>` and `:latest` (`linux/amd64`, `linux/arm64`).
 
 ---
 
-## 9. Fehlerbehandlung
+## 9. Error handling
 
-Tool-Fehler werden als MCP-Ergebnis mit `isError: true` und strukturiertem Code zurückgegeben:
-
-| Code | Auslöser | Meldung an den Agenten |
+| Code | Cause | Message to the agent |
 |---|---|---|
-| `AUTH_FAILED` | Login/Refresh endgültig fehlgeschlagen | „Anmeldung bei itslearning fehlgeschlagen – Zugangsdaten prüfen.“ |
-| `SSO_NOT_SUPPORTED` | Instanz ohne nativen Login | siehe 4.1 |
-| `FORBIDDEN` | `403` | „Kein Zugriff auf dieses Element.“ |
-| `NOT_FOUND` | `404` | „Element nicht gefunden.“ |
-| `RATE_LIMITED` | `429` nach Retries | „itslearning drosselt Anfragen – später erneut versuchen.“ |
-| `UPSTREAM_ERROR` | `5xx`/Netzwerk nach Retries | „itslearning ist nicht erreichbar.“ |
-| `FILE_REF_UNKNOWN` | unbekanntes `fileRef` | „Datei-Referenz unbekannt – Liste erneut abrufen.“ |
-| `FILE_TOO_LARGE` | > `MAX_FILE_MB` | mit Größe |
-| `NOT_A_FILE` | Download-Flow ergibt keine Datei | mit `kind` |
-| `INVALID_INPUT` | zod-Validierung | mit Feldnamen |
+| `AUTH_FAILED` | login/refresh failed for good | credentials/instance wrong |
+| `SSO_NOT_SUPPORTED` | instance without native login | federated login not supported |
+| `FORBIDDEN` | `403` | no access to this element |
+| `NOT_FOUND` | `404` | element not found |
+| `RATE_LIMITED` | `429` after retries | itslearning is throttling |
+| `UPSTREAM_ERROR` | `5xx`/network after retries | itslearning unreachable |
+| `FILE_REF_UNKNOWN` | invalid or no longer resolvable fileRef | fetch the list again |
+| `FILE_TOO_LARGE` | > `MAX_FILE_MB` | with size |
+| `NOT_A_FILE` | element/mode yields no file or text | with hint |
+| `INVALID_INPUT` | schema validation | with field |
 
-Rohe Fehlertexte der API (sie enthalten IDs wie `PersonId=…`) werden **nie** durchgereicht, sondern nur bereinigt geloggt (`sanitizeError`).
-
----
-
-## 10. Projektstruktur
-
-```
-itslearning-mcp/
-├─ src/
-│  ├─ server.ts            # Einstieg, Transport, /healthz, API-Key
-│  ├─ config.ts
-│  ├─ log.ts
-│  ├─ auth/tokenStore.ts
-│  ├─ api/{client,endpoints,types}.ts
-│  ├─ websession/{cookieJar,browse,downloadFlow}.ts
-│  ├─ redaction/{registry,display,teachers,freetext,secrets,html}.ts
-│  ├─ files/{registry,cache,extract}.ts
-│  └─ tools/{overview,courses,tasks,news,bulletins,messages,files}.ts
-├─ test/
-│  ├─ fixtures/            # synthetische API-Antworten (Struktur wie im echten Report, Fantasie-Namen)
-│  └─ *.test.ts
-├─ scripts/                # bestehende Probe-Skripte (bleiben als Debug-Werkzeug)
-├─ docs/
-├─ Dockerfile
-├─ compose.yaml
-├─ .env.example
-└─ README.md
-```
+Raw API error texts (they contain IDs such as `PersonId=…`) are never passed through; they are logged sanitised only.
 
 ---
 
-## 11. Tests und Abnahme
+## 10. Tests
 
-### 11.1 Unit-Tests (`bun test`, ohne Netzwerk)
-
-- **Fixtures:** synthetische Antworten für alle genutzten Endpunkte. Die Struktur folgt den Schemas aus `probe-output/report2.json`, die Namen sind ausgedacht.
-- **Schwärzung:**
-  - Kein Vor- oder Nachname aus den Fixtures (außer Lehrkräfte-Nachnamen) taucht in einer Tool-Ausgabe auf.
-  - Pseudonyme bleiben bei gleichem Secret stabil und ändern sich bei anderem Secret.
-  - `teachers.json`: Anrede wird übernommen; leer → „Lehrkraft X“; `REDACT_TEACHERS` → Pseudonym.
-  - Freitext: Vollname, „Nachname, Vorname“, Kurzname, „Frau Nachname“, E-Mail, Telefon, Profil-URL.
-  - Fehlalarme: Stoppwörter und Vornamen < 3 Zeichen bleiben stehen.
-  - Geheimnis-Filter: keine `Token=`, `Signature=`, `filecache`, `LoginSSO`, `iCal`-URLs in der Ausgabe.
-- **Auth:** Refresh 30 s vor Ablauf; der rotierende Refresh-Token wird gespeichert; paralleler Refresh nur einmal; Rückfall auf Passwort.
-- **fileRef:** stabil, unbekannt → `FILE_REF_UNKNOWN`, keine URL in der Ausgabe.
-
-### 11.2 Smoke-Test gegen eine echte Instanz (`bun run smoke`)
-
-- Ruft jedes Tool einmal auf (Download: erste gefundene Datei).
-- **Leak-Prüfung** auf allen Ausgaben:
-  - Kein Name aus der Personen-Registry, außer erlaubten Lehrkräfte-Nachnamen
-  - Kein `@`, keine `Token=`/`Signature=`
-  - Kein Host `filecache`/`filerepository`
-- Gibt nur Bestanden oder Nicht bestanden und die Anzahl aus, keine Inhalte.
-
-### 11.3 Abnahmekriterien v1
-
-- [ ] Alle Tools aus 5 liefern Daten gegen die Referenzinstanz.
-- [ ] Unit-Tests grün, Smoke-Test ohne Leak.
-- [ ] Neustart des Containers ohne erneute Passwort-Prüfung (Refresh-Token aus `state.json`), Token-Erneuerung über > 1 h stabil.
-- [ ] `docker compose up` mit einer anderen `ITSL_BASE_URL` startet und meldet entweder Erfolg oder einen klaren Fehler (z. B. SSO).
-- [ ] Image läuft nicht als root, Dateisystem schreibgeschützt bis auf `/data` und `/tmp`.
-
----
-
-## 12. Meilensteine
-
-| # | Inhalt | Ergebnis |
-|---|---|---|
-| M1 | Grundgerüst, Config, Auth/TokenStore, API-Client, `list_courses`, `list_tasks`, `get_task`, stdio-Transport | Erste Tools in Claude Code nutzbar |
-| M2 | Personen-Registry, Lehrkräfte-Verzeichnis, Freitext-Schwärzung, `overview`, `list_news`, `list_bulletins`, Nachrichten-Tools | Alle Lese-Tools außer Dateien, mit Schwärzung |
-| M3 | fileRef-Registry, Web-Session, `list_course_files`, `download_file`, Textextraktion, Datei-Cache | Dateien |
-| M4 | HTTP-Transport + API-Key, Dockerfile, Compose, README, Smoke-Test | Abnahme v1 |
-
----
-
-## 13. Offene Punkte und Ideen für später
-
-**Klären beim Implementieren** (aus `itslearning-api.md`):
-- Mapping von `LearningToolId` (Datei, Link, Seite, Test) → genaueres `kind` in `list_course_files`
-- Abkürzung: `DownloadRedirect.ashx` direkt mit `LearningObjectId`/`LearningObjectInstanceId` aus der Ressourcen-API (spart etwa 6 Anfragen pro Datei)
-- Anhänge an Aufgaben (`assignments/{id}/files/{fileId}/v1`): beim ersten echten Anhang verifizieren
-- Tatsächliche Werte von `RoleInHierarchyTitle` → Default für `TEACHER_ROLE_TITLES` anpassen
-
-**v2-Ideen:**
-- Eltern-Konten (`children/{childId}/tasks|courses|plans|upcoming`)
-- Kalender-Tool (Endpunkt verifiziert, an der Referenzinstanz leer)
-- Wochenpläne (`planner/v1`, `children/{id}/plans/v1`)
-- Optional: Login über fremde Anbieter mithilfe eines Headless-Browsers
+- **Unit/integration tests** (`bun test`, no network, fake data only): config, token store, API client, redaction (dictionary, URL filters, encoded blobs), person registry, teacher directory, all tools, a fake web UI reproducing the verified download chain, HTTP transport, MCP protocol in-memory, leak tests across all tools.
+- **Smoke test** against a real instance (`bun run smoke [--details]`): calls every tool once, fetches the real names via the API and checks every output against them and against secret patterns. Prints counts and masked structure only (letters → `x`, digits → `9`), so its output can be shared. Exit code 1 on findings.

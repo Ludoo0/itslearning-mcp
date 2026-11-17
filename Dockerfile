@@ -1,5 +1,5 @@
-# itslearning-MCP-Server – Streamable HTTP auf Port 3000
-# Kein Bundling: unpdf (pdf.js) und mammoth werden zur Laufzeit dynamisch importiert.
+# itslearning-mcp – Streamable HTTP on port 3000
+# No bundling: unpdf (pdf.js) and mammoth are imported dynamically at runtime.
 
 FROM oven/bun:1-alpine AS deps
 WORKDIR /app
