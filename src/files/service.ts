@@ -10,6 +10,7 @@ import type { ItslearningApi } from "../context";
 import { ToolError } from "../errors";
 import { log } from "../log";
 import { LABELS, type Labels } from "../redaction/labels";
+import { isItslearningUrl } from "../redaction/secrets";
 import {
   type BrowseResult,
   CookieJar,
@@ -114,7 +115,19 @@ export class FileService {
     const target = detail.ContentUrl || detail.Url;
     if (!target) throw new ToolError("NOT_A_FILE", "This element has no content.");
     const title = detail.Title?.trim() || `Element-${elementId}`;
+    return this.viaWebSession(ref, target, title);
+  }
 
+  /**
+   * Opens an itslearning web page (e.g. a task's ContentUrl) through a web session and follows iframes/download
+   * links. Returns the page HTML (NOT redacted) or a file. Only itslearning URLs are accepted.
+   */
+  async fetchPage(ref: string, target: string, title: string): Promise<DownloadResult> {
+    if (!isItslearningUrl(target)) throw new ToolError("NOT_FOUND", "No itslearning page for this element.");
+    return this.viaWebSession(ref, target, title);
+  }
+
+  private async viaWebSession(ref: string, target: string, title: string): Promise<DownloadResult> {
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) this.jar = new CookieJar();
       const sso = await this.api.ssoUrl(target);

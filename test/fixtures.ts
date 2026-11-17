@@ -295,6 +295,7 @@ export const TASKS: ApiTask[] = [
     Deadline: "2026-11-10T07:00:00Z",
     ElementType: "CustomActivity",
     Homework: false,
+    ContentUrl: "https://demo.itslearning.com/CustomActivity/CustomActivityOverview.aspx?CustomActivityId=7002",
   },
   {
     TaskId: 503,

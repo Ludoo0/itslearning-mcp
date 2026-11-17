@@ -39,11 +39,28 @@ export function looksLikeHtml(s: string): boolean {
   return /<\/?[a-z][^>]*>/i.test(s) || /&(#\d+|[a-z]+);/i.test(s);
 }
 
+/** Removes all tags, repeated until stable (a single pass can leave tags formed by overlapping fragments). */
+function stripTags(input: string): string {
+  let s = input;
+  let prev: string;
+  do {
+    prev = s;
+    s = s.replace(/<[^>]+>/g, "");
+  } while (s !== prev);
+  return s;
+}
+
 export function htmlToText(html: string, labels: Labels = LABELS.en): string {
   let s = html;
-  s = s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  let prev: string;
+  // Non-content: code, styles and page chrome (navigation, header, footer) of web pages.
+  // Repeated until stable, so nested/overlapping constructs ("<scr<script></script>ipt>") cannot survive.
+  do {
+    prev = s;
+    s = s.replace(/<(script|style|noscript|template|svg|nav|header|footer)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+  } while (s !== prev);
   s = s.replace(/<a\b[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href: string, inner: string) => {
-    const text = inner.replace(/<[^>]+>/g, "").trim();
+    const text = stripTags(inner).trim();
     const url = decodeEntities(href);
     if (isShareableUrl(url)) return text && text !== url ? `[${text}](${url})` : url;
     return text;
@@ -56,11 +73,18 @@ export function htmlToText(html: string, labels: Labels = LABELS.en): string {
   s = s.replace(/<\/?(strong|b)>/gi, "**");
   s = s.replace(/<\/?(em|i)>/gi, "_");
   s = s.replace(/<img\b[^>]*>/gi, labels.image);
-  s = s.replace(/<[^>]+>/g, "");
+  s = stripTags(s);
   s = decodeEntities(s);
-  return s
-    .replace(/[ \t ]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return (
+    s
+      .replace(/\r\n?/g, "\n") // itslearning pages use CRLF
+      .replace(/[ \t\u00a0]+/g, " ")
+      .replace(/ *\n */g, "\n")
+      // list item whose content starts on the next line ("-\ncontent") → "- content"
+      .replace(/^- ?\n(?=[^\n#-])/gm, "- ")
+      // empty list items (page layout lists)
+      .replace(/^- ?$/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
 }

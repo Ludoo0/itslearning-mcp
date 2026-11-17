@@ -3,7 +3,9 @@ import { z } from "zod";
 import type { ApiAssignment, ApiTask } from "../api/types";
 import type { AppContext } from "../context";
 import { ToolError } from "../errors";
+import { canExtractText, extractText } from "../files/extract";
 import { type FileRefDto, formatRef } from "../files/refs";
+import { log } from "../log";
 import { redactFileName } from "./files";
 import { warmCourses } from "./people";
 import { handler, ok } from "./result";
@@ -143,6 +145,27 @@ export const getTaskInput = {
   elementId: z.number().int().positive().describe("elementId from itslearning_list_tasks"),
 };
 
+/**
+ * Redacted text of a task's itslearning web page (fallback when the assignment API refuses details).
+ * The page may contain UI labels besides the task text. Best effort: errors return undefined.
+ * Course participants are already registered by the caller (warmCourses) before redaction.
+ */
+async function taskPageText(ctx: AppContext, t: ApiTask): Promise<string | undefined> {
+  const target = t.ContentUrl || t.Url;
+  if (!target) return undefined;
+  try {
+    const r = await ctx.files.fetchPage(formatRef({ kind: "element", elementId: t.ElementId }), target, t.Title);
+    let raw: string | undefined;
+    if (r.type === "page") raw = r.html;
+    else if (canExtractText(r.mimeType, r.name)) raw = await extractText(r.data, r.mimeType, r.name);
+    const text = raw ? ctx.redactor.text(raw, TEXT_LEN) : "";
+    return text.trim() ? text : undefined;
+  } catch (e) {
+    log.warn("Task page not available", { code: e instanceof ToolError ? e.code : "error" });
+    return undefined;
+  }
+}
+
 export async function getTask(ctx: AppContext, args: { elementId: number }) {
   const base = (await ctx.it.tasks()).find((t) => t.ElementId === args.elementId);
   if (base) await warmCourses(ctx, [courseIdOf(base)]);
@@ -155,6 +178,9 @@ export async function getTask(ctx: AppContext, args: { elementId: number }) {
     if (!(e instanceof ToolError && (e.code === "FORBIDDEN" || e.code === "NOT_FOUND") && base)) throw e;
   }
   if (!a && !base) throw new ToolError("NOT_FOUND", "Task not found.");
+
+  // Fallback: the API refuses details for some task types → read the task's web page instead
+  const pageText = !a && base ? await taskPageText(ctx, base) : undefined;
 
   const baseDto = base ? toTaskDto(ctx, base) : undefined;
   const files = a ? assignmentFiles(ctx, args.elementId, a) : [];
@@ -170,7 +196,8 @@ export async function getTask(ctx: AppContext, args: { elementId: number }) {
     overdue: due !== undefined && due < ctx.now().getTime() && (base ? isOpen(base) : a?.AnswerId == null),
     homework: a?.IsHomework ?? base?.Homework ?? false,
     type: base ? taskType(base) : "assignment",
-    detailsUnavailable: !a,
+    detailsUnavailable: !a && !pageText,
+    ...(a ? { detailsSource: "api" as const } : pageText ? { detailsSource: "page" as const, text: pageText } : {}),
     ...(a
       ? {
           text: ctx.redactor.text(a.Text || a.RawText, TEXT_LEN),
@@ -209,7 +236,7 @@ export function registerTaskTools(server: McpServer, ctx: AppContext) {
     {
       title: "Task details",
       description:
-        "Details of a task: instructions (redacted, as text), deadline, submission type, whether it was submitted, attachments (fileRef → itslearning_download_file). Some task types have no details (detailsUnavailable).",
+        'Details of a task: instructions (redacted, as text), deadline, submission type, whether it was submitted, attachments (fileRef → itslearning_download_file). For task types the API does not describe (e.g. polls, activities), `text` is taken from the task\'s web page (detailsSource: "page") and may include some interface labels; detailsUnavailable means no text could be obtained at all.',
       inputSchema: getTaskInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },

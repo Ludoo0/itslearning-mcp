@@ -64,7 +64,7 @@ The output contains only status codes and counts – no names or content – so 
 | `itslearning_overview` | Starting point: overdue and upcoming tasks, recent news, unread message threads |
 | `itslearning_list_courses` | Current (optionally all) courses with `courseId` and new-item counters |
 | `itslearning_list_tasks` | Tasks/homework sorted by deadline; filter by course, status, due date, homework, active courses |
-| `itslearning_get_task` | Task details: assignment text, deadline, submission type, attachments (`fileRef`) |
+| `itslearning_get_task` | Task details: assignment text (from the task's web page if the API has none), deadline, submission type, attachments (`fileRef`) |
 | `itslearning_list_news` | News feed across all courses or one course, optionally since a date |
 | `itslearning_list_bulletins` | Announcements of a course incl. attached resources and images |
 | `itslearning_list_message_threads` | Message threads with last message and unread status |

@@ -5,6 +5,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `itslearning_get_task`: for task types the assignment API does not describe (polls, choices, `CustomActivity`), the instructions are now read from the task's web page via the web session and returned redacted as `text` with `detailsSource: "page"`. `detailsUnavailable` is only `true` if no text could be obtained at all.
+
+### Changed
+
+- HTML → text conversion drops page chrome (`nav`, `header`, `footer`) as well as `noscript`, `template` and `svg` content, normalises CRLF line breaks, removes empty list items and keeps list item content on the bullet line.
+- Docker base image pinned to `oven/bun:1.4.4-alpine` (same Bun version as CI).
+- Biome for linting and formatting (`bun run lint` in CI, `bun run format`).
+- The release workflow can be started manually as a dry run (full pipeline, nothing published).
+
 ## [0.1.0] - 2026-11-17
 
 First public release.

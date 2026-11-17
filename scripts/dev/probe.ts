@@ -339,11 +339,12 @@ async function browse(url: string, jar: CookieJar, maxHops = 12) {
   return { res, hops, finalUrl: current };
 }
 
+// &amp; last – otherwise "&amp;quot;" would be decoded twice
 const decodeHtml = (s: string) =>
   s
-    .replace(/&amp;/g, "&")
     .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"');
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&");
 
 const DOWNLOAD_RE =
   /download|file\.aspx|\/file\/|getfile|filerepository|\.(pdf|docx?|xlsx?|pptx?|od[tsp]|zip|jpe?g|png|gif|mp[34]|txt|rtf)(\?|$)/i;
