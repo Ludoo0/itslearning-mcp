@@ -1,7 +1,7 @@
 # itslearning REST API – findings for the MCP server
 
 As of 2026-11-16 · Reference instance: a school on `https://<instance>.itslearning.com` (itslearning v2026.11)
-Sources: the public API help pages at `/restapi/help` plus three probe runs with a **student account** (`scripts/probe.ts`, `scripts/probe2.ts`).
+Sources: the public API help pages at `/restapi/help` plus three probe runs with a **student account** (probe scripts; the current one is `scripts/dev/probe.ts`).
 
 > This document deliberately contains no content, names or IDs from the account – only structures.
 > Specification of the server built on top of it: [`mcp-server-spec.md`](./mcp-server-spec.md)
@@ -246,7 +246,6 @@ Observations:
 | Script | Purpose |
 |---|---|
 | `scripts/lib.ts` | Terminal input (hidden password), OAuth2 login, refresh, API client with auto-refresh |
-| `scripts/probe.ts` (`bun run probe`) | Round 1: rough availability of 12 endpoints |
-| `scripts/probe2.ts` (`bun run probe2`) | Rounds 2/3: deep probe; writes a **redacted** report to `probe-output/report2.json` (field names/types, status, counts, URL patterns, enum values only). `--save` additionally stores raw data locally (private!). |
+| `scripts/dev/probe.ts` (`bun run probe`) | Deep probe; writes a **redacted** report to `probe-output/report.json` (field names/types, status, counts, URL patterns, enum values only). `--save` additionally stores raw data locally (private!). |
 
 `probe-output/` is gitignored.

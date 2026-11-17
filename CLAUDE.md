@@ -16,6 +16,7 @@ This project was developed and tested against a real student account. **Never co
 - **Never in the repository:** instance URLs, school names or locations, customer IDs; real names, course titles, element/person IDs from any account; content of `probe-output/`, `.data/`, `downloads/`, `secrets/`, `.env` (all gitignored).
 - Before every commit, search the staged diff for identifying terms (`git diff --cached | grep -nE '<instance>|<school>|<city>|<customerId>'` – the maintainer knows the concrete terms; do not write them down here).
 - **Test data is fictional** (`test/fixtures.ts`, `test/fakeWeb.ts`: "Jonas Beispielmann", "Sabine Lindqvist", …). Never put real data into tests.
+- **Never run `bun run check`, `call`, `smoke` or `probe` against placeholder/example URLs while a `.env` with real credentials is present**, and never build shell commands from text that contains backticks (e.g. Markdown) – use file-editing tools for docs.
 - **Bun loads `.env` automatically** – a developer's `.env` may contain real credentials. When starting the server or scripts locally without intending to use the real account, explicitly override `ITSL_BASE_URL`/`ITSL_USERNAME`/`ITSL_PASSWORD` with dummy values (e.g. `ITSL_BASE_URL=https://example.itslearning.com`) and point `DATA_DIR` to a scratch directory. Tests against a real account are run by the maintainer (`bun run call …`, `bun run smoke`) or via the connected MCP server.
 - Output meant to be shared (reports, smoke test) contains **structure/counts only**, never content – see `scripts/smokeCore.ts` (masking `x`/`9`).
 - When real (redacted) data reaches the chat through the MCP tools: describe patterns only in reports, never copy names/course titles into files.
@@ -35,7 +36,9 @@ Bun + TypeScript (strict) + `@modelcontextprotocol/sdk` + `zod`. No build step; 
 | `src/redaction/` | Person registry (roles, HMAC pseudonyms), labels (`labels.ts`, en/de), `teachers.json` (salutation, hot reload), name dictionary, secret/URL filters, HTML → text |
 | `src/files/`, `src/websession/` | fileRefs (`e_`/`a_`/`m_`/`i_`, stateless), download flows (SSO → web session → iframes → `DownloadRedirect`), text extraction (unpdf, mammoth), disk cache |
 | `src/tools/` | One module per tool group; DTOs are **allowlists** (never pass raw API responses through) |
-| `scripts/` | `call.ts` (call a tool against a real instance), `smoke.ts`/`smokeCore.ts` (leak check), `probe*.ts` (API exploration) |
+| `src/check/` | Compatibility check (`bun run check <url>`; part of the Docker image): public checks + optional account checks, status/counts only |
+| `src/cli/` | Shared terminal prompts (hidden password input) |
+| `scripts/` | `call.ts` (call a tool against a real instance), `smoke.ts`/`smokeCore.ts` (leak check), `dev/probe.ts` (API exploration) |
 
 ### Invariants
 - **Register people first, then redact text** (`registerThread`, `registerPublishedBy`, `warmCourse`/`warmForFileRef` in `src/tools/people.ts`).

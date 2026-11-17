@@ -1,23 +1,25 @@
 /**
- * itslearning API probe – round 2
+ * itslearning API probe (developer tool for mapping the API)
  *
- * Tests specifically: token refresh, calendar, course content (news, stream, resources),
+ * Logs in and probes: token refresh, calendar, course content (news, stream, resources),
  * task details incl. attachments, message threads and file downloads
  * (via SSO URL → web session → download link).
  *
- * Result: probe-output/report2.json – REDACTED, i.e. structure only:
+ * Result: probe-output/report.json – REDACTED, i.e. structure only:
  *   field names + types, counts, HTTP status, URL patterns (ids/tokens/file names replaced)
  *   and values of some enum fields (ElementType, Status …). No names, no texts.
  *
- * Run:   bun run probe2           (redacted report only)
- *        bun run probe2 --save    (additionally raw data to probe-output/raw2/ – private!)
+ * Run:   bun run probe           (redacted report only)
+ *        bun run probe --save    (additionally raw data to probe-output/raw/ – private!)
+ *
+ * For checking whether an instance is supported at all, use `bun run check` instead.
  */
 
-import { BASE, UA, ItslearningClient, loginWithPassword, refreshToken, promptCredentials } from "./lib";
+import { BASE, UA, ItslearningClient, loginWithPassword, refreshToken, promptCredentials } from "../lib";
 
 const SAVE = process.argv.includes("--save");
 const OUT = "probe-output";
-const RAW = `${OUT}/raw2`;
+const RAW = `${OUT}/raw`;
 const DELAY_MS = 300;
 const DEEP_COURSES = 3;
 const MAX_DOWNLOADS = 3;
@@ -464,7 +466,7 @@ async function probeResourceDownload(resource: Json, idx: number) {
 
 async function main() {
   const { username, password } = await promptCredentials();
-  console.log(`\nitslearning API probe – round 2 → ${BASE}`);
+  console.log(`\nitslearning API probe – probe → ${BASE}`);
 
   // --- 1. Auth + Refresh ---
   process.stdout.write("\nLogin … ");
@@ -665,11 +667,11 @@ async function main() {
     findings,
     steps,
   };
-  await Bun.write(`${OUT}/report2.json`, JSON.stringify(report, null, 2));
+  await Bun.write(`${OUT}/report.json`, JSON.stringify(report, null, 2));
 
   const ok = steps.filter((s) => typeof s.status === "number" && s.status < 300).length;
   console.log(`\nDone: ${ok}/${steps.length} steps successful.`);
-  console.log(`Redacted report: ${OUT}/report2.json  (contains no content – safe to share)`);
+  console.log(`Redacted report: ${OUT}/report.json  (contains no content – safe to share)`);
   if (SAVE) console.log(`Raw data: ${RAW}/  (PRIVATE – contains personal data, do not share!)`);
 }
 

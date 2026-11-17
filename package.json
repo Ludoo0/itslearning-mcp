@@ -32,9 +32,9 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit -p .",
     "call": "bun run scripts/call.ts",
-    "probe": "bun run scripts/probe.ts",
-    "probe2": "bun run scripts/probe2.ts",
-    "smoke": "bun run scripts/smoke.ts"
+    "probe": "bun run scripts/dev/probe.ts",
+    "smoke": "bun run scripts/smoke.ts",
+    "check": "bun run src/check/cli.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

@@ -34,6 +34,24 @@ Agent ──MCP──▶ itslearning-mcp ──REST──▶ https://<your-schoo
 - A student account. Parent accounts are not supported yet (see [roadmap](docs/roadmap.md)).
 - Docker, or [Bun](https://bun.sh) ≥ 1.4 to run it without Docker.
 
+### Check your instance first
+
+A compatibility check tells you whether itslearning-mcp can work with your school's instance – before you set anything up:
+
+```bash
+# with Docker (nothing to install)
+docker run --rm -it ghcr.io/ludoo0/itslearning-mcp bun src/check/cli.ts https://yourschool.itslearning.com
+
+# or from a clone
+bun run check https://yourschool.itslearning.com
+```
+
+- **Without credentials** it checks reachability, the login method (native vs. single sign-on only), the REST API and whether the mobile-app login is accepted – the latter with a random, non-existent user name.
+- **Optionally** (`--login`, or answer the prompt) it also tests your account: login, token refresh, account type, core endpoints, course participants and the file download path. Your credentials are only sent after all public checks passed and only to `*.itslearning.com`. `ITSL_USERNAME`/`ITSL_PASSWORD` from the environment are only used if `ITSL_BASE_URL` matches the checked URL.
+- `--no-login` skips the account part, `--json` prints a machine-readable report.
+
+The output contains only status codes and counts – no names or content – so you can paste it into an issue. Nothing is stored.
+
 ## Tools
 
 | Tool | What it does |
@@ -248,7 +266,7 @@ bun test
 - Roadmap: [docs/roadmap.md](docs/roadmap.md)
 - Changes: [CHANGELOG.md](CHANGELOG.md)
 
-`scripts/probe*.ts` are the exploration scripts used to map the API (their report contains structure only).
+`scripts/dev/probe.ts` (`bun run probe`) is the exploration script used to map the API; its report contains structure only.
 
 ## Security
 

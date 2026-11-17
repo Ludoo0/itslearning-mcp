@@ -26,7 +26,8 @@ First public release.
 - REST client with rate limiting, TTL cache, retries with backoff and sanitised error mapping.
 - Docker image (Alpine, non-root, read-only root filesystem, health check) and `compose.yaml` with file-based secrets; images published to `ghcr.io/ludoo0/itslearning-mcp` for `linux/amd64` and `linux/arm64`.
 - Smoke test (`bun run smoke`) that checks all tool output of a real account against real names and secret patterns and prints counts/masked structure only.
-- Developer script `bun run call` to call tools against a real instance; API probe scripts.
+- Compatibility check (`bun run check <url>`, also inside the Docker image): public checks without credentials, optional account checks; credentials are only sent to `*.itslearning.com` after all public checks passed; prints status and counts only.
+- Developer script `bun run call` to call tools against a real instance; API probe script (`bun run probe`).
 
 ### Fixed
 

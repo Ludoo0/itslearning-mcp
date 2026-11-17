@@ -1,5 +1,5 @@
 /**
- * Shared helpers for the itslearning scripts:
+ * Shared helpers for the developer scripts (scripts/):
  * terminal input, OAuth2 login, token refresh, API client.
  */
 
@@ -17,49 +17,8 @@ export const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) itslearning-mcp-pro
 
 // ---------- Terminal input ----------
 
-/** Reads a line from the terminal; with hidden=true it echoes * instead of the text. */
-function readInput(question: string, hidden: boolean): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const stdin = process.stdin;
-    process.stdout.write(question);
-    if (!stdin.isTTY) {
-      reject(new Error("No interactive terminal – run this directly in a terminal (or set ITSL_USERNAME/ITSL_PASSWORD)."));
-      return;
-    }
-    let input = "";
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.setEncoding("utf8");
-    const onData = (chunk: string) => {
-      for (const ch of chunk) {
-        if (ch === "\r" || ch === "\n") {
-          stdin.setRawMode(false);
-          stdin.pause();
-          stdin.off("data", onData);
-          process.stdout.write("\n");
-          resolve(input);
-          return;
-        } else if (ch === "\u0003") {
-          stdin.setRawMode(false);
-          process.stdout.write("\n");
-          process.exit(130);
-        } else if (ch === "\u007f" || ch === "\b") {
-          if (input.length > 0) {
-            input = input.slice(0, -1);
-            process.stdout.write("\b \b");
-          }
-        } else {
-          input += ch;
-          process.stdout.write(hidden ? "*" : ch);
-        }
-      }
-    };
-    stdin.on("data", onData);
-  });
-}
-
-export const readLine = (q: string) => readInput(q, false).then((s) => s.trim());
-export const readHidden = (q: string) => readInput(q, true);
+import { readHidden, readLine } from "../src/cli/prompt";
+export { readHidden, readLine };
 
 export async function promptCredentials(): Promise<{ username: string; password: string }> {
   if (!BASE) BASE = normalizeBase(await readLine("itslearning URL (e.g. yourschool.itslearning.com): "));
