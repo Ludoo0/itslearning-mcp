@@ -85,6 +85,20 @@ describe("html", () => {
     expect(out).toBe("Hello class,\n\n- Task 1\n- Task 2\n[Sheet](https://example.org/x) Course[image]");
     expect(htmlToText('<img src="x.png">', LABELS.de)).toBe("[Bild]");
   });
+
+  test("task-page layout: CRLF, blank lines, empty list items and item content on the next line are cleaned up", () => {
+    // structure modelled on a real itslearning task page (content fictional)
+    const page =
+      "<div>Sample task</div>\r\n\r\n\r\n\r\n<ul><li>\r\n</li><li>\r\n</li></ul>\r\n\r\n\r\n" +
+      "<div>Have you completed this task?</div>\r\n<span>Yes</span>\r\n<span>No</span>\r\n" +
+      "<ul><li>\r\n</li></ul><h2>Description</h2>\r\n\r\n<p>Watch the film about cells</p>\r\n<img src='x.png'>\r\n\r\n" +
+      "<h2>Information</h2><ul><li>\r\nPublished Monday by \r\nTeacher Example\r\n\r\n</li><li>\r\n</li><li>\r\nThis task is mandatory\r\n</li><li>\r\n\r\n</li></ul>";
+    const out = htmlToText(page);
+    expect(out).not.toMatch(/\r|\n{3,}|^- ?$/m);
+    expect(out).toBe(
+      "Sample task\n\nHave you completed this task?\n\nYes\nNo\n\n## Description\n\nWatch the film about cells\n\n[image]\n\n## Information\n\n- Published Monday by\nTeacher Example\n\n- This task is mandatory",
+    );
+  });
 });
 
 describe("freetext", () => {

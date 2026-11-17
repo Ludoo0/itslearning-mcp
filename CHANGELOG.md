@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- HTML → text conversion drops page chrome (`nav`, `header`, `footer`) as well as `noscript`, `template` and `svg` content.
+- HTML → text conversion drops page chrome (`nav`, `header`, `footer`) as well as `noscript`, `template` and `svg` content, normalises CRLF line breaks, removes empty list items and keeps list item content on the bullet line.
 - Docker base image pinned to `oven/bun:1.4.4-alpine` (same Bun version as CI).
 - Biome for linting and formatting (`bun run lint` in CI, `bun run format`).
 - The release workflow can be started manually as a dry run (full pipeline, nothing published).

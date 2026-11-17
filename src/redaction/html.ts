@@ -59,9 +59,16 @@ export function htmlToText(html: string, labels: Labels = LABELS.en): string {
   s = s.replace(/<img\b[^>]*>/gi, labels.image);
   s = s.replace(/<[^>]+>/g, "");
   s = decodeEntities(s);
-  return s
-    .replace(/[ \t ]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return (
+    s
+      .replace(/\r\n?/g, "\n") // itslearning pages use CRLF
+      .replace(/[ \t\u00a0]+/g, " ")
+      .replace(/ *\n */g, "\n")
+      // list item whose content starts on the next line ("-\ncontent") → "- content"
+      .replace(/^- ?\n(?=[^\n#-])/gm, "- ")
+      // empty list items (page layout lists)
+      .replace(/^- ?$/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
 }
