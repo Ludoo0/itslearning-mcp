@@ -86,6 +86,12 @@ describe("html", () => {
     expect(htmlToText('<img src="x.png">', LABELS.de)).toBe("[Bild]");
   });
 
+  test("nested/overlapping markup cannot survive (CodeQL: incomplete multi-character sanitization)", () => {
+    expect(htmlToText("a<scr<script>x</script>ipt>alert(1)</script>b")).not.toMatch(/<script|<\/?[a-z]/i);
+    expect(htmlToText("<<b>i>text</i>")).not.toMatch(/<\/?[a-z]/i);
+    expect(htmlToText('<a href="/x"><<b>i>link</a>')).not.toMatch(/<\/?[a-z]/i);
+  });
+
   test("task-page layout: CRLF, blank lines, empty list items and item content on the next line are cleaned up", () => {
     // structure modelled on a real itslearning task page (content fictional)
     const page =

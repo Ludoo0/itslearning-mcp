@@ -40,6 +40,15 @@ describe("building blocks", () => {
     expect(filenameFromDisposition(null)).toBeUndefined();
   });
 
+  test("extractLinks decodes entities only once (CodeQL: double escaping)", () => {
+    const l = extractLinks(
+      '<a href="/Proxy/DownloadRedirect.ashx?a=1&amp;b=%26amp%3B&amp;c=&amp;quot;">x</a>',
+      "https://resource.itslearning.com/",
+    );
+    // "&amp;quot;" must become "&quot;" (literal), not '"'
+    expect(l.downloads[0]).toBe("https://resource.itslearning.com/Proxy/DownloadRedirect.ashx?a=1&b=%26amp%3B&c=&quot;");
+  });
+
   test("extractLinks prefers DownloadRedirect and ignores icons", () => {
     const l = extractLinks(
       '<img src="/App_Themes/Default/images/file.gif"><a href="https://filerepository.itslearning.com/a?Download=1">x</a><a href="/Proxy/DownloadRedirect.ashx?LearningObjectId=1&amp;LearningObjectInstanceId=2">y</a><iframe src="/inner.aspx"></iframe>',
