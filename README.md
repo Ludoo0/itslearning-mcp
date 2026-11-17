@@ -93,7 +93,7 @@ docker compose ps          # should become "healthy"
 docker compose up -d --build
 ```
 
-PowerShell: `Copy-Item -Recurse secrets.example secrets` and `$env:ITSL_BASE_URL = "https://yourschool.itslearning.com"`. Compose also reads `ITSL_BASE_URL` from a `.env` file next to `compose.yaml`. Pin a version with `ITSLEARNING_MCP_VERSION=0.1.0`.
+PowerShell: `Copy-Item -Recurse secrets.example secrets` and `$env:ITSL_BASE_URL = "https://yourschool.itslearning.com"`. Compose also reads `ITSL_BASE_URL` from a `.env` file next to `compose.yaml`. Pin a version with `ITSLEARNING_MCP_VERSION=0.2.0`.
 
 - The server listens on `http://127.0.0.1:3000/mcp` (localhost only). For access from other machines put a TLS reverse proxy in front.
 - Every request needs `Authorization: Bearer <mcp_api_key>`. `GET /healthz` is unauthenticated.

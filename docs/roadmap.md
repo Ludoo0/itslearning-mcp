@@ -1,13 +1,10 @@
 # Roadmap
 
-Open items after v0.1.0. Background: [`mcp-server-spec.md`](./mcp-server-spec.md), [`itslearning-api.md`](./itslearning-api.md).
+Open items after v0.2.0. Background: [`mcp-server-spec.md`](./mcp-server-spec.md), [`itslearning-api.md`](./itslearning-api.md). What has been released is listed in the [CHANGELOG](../CHANGELOG.md).
 
 > When documenting findings from a real instance, describe patterns only – never names, IDs or course titles.
 
-## Next (v0.2)
-
-### Verify the task details fallback against a real instance
-Implemented (task page text via web session, `detailsSource: "page"`), tested with fake pages only. Check with real polls/choices and `CustomActivity` tasks how much interface text remains in `text` and whether the page structure needs more filtering.
+## Next (v0.3)
 
 ### Element type mapping (`LearningToolId`)
 `itslearning_list_course_files` cannot tell files, links, pages and tests apart up front – all non-folders are `LearningToolElement`; only `LearningToolId` (or the `ExtensionId` in `IconUrl`) distinguishes them. Collect the mapping from real instances and expose a `kind` such as `file` / `link` / `page` / `test`.
@@ -17,6 +14,12 @@ The download chain needs about 8 requests per file. `LearningObjectId` and `Lear
 
 ### Verify task attachments
 `a_<elementId>_<fileId>` references are implemented from the API documentation only (`assignments/{id}/files/{fileId}/v1` → 302). The exact shape of `Files[]`/`TemplateFile` is unverified – test against a task that actually has attachments.
+
+### Task page fallback for polls and choices
+Since v0.2.0, `itslearning_get_task` reads the instructions from the task's web page when the assignment API refuses details. Verified against a real instance with a `CustomActivity` task (clean text, redacted). Still to check: `LearningToolElement`-based tasks that are refused as well (e.g. polls or project selections) – their pages are embedded via iframes and may contain more interface text or form elements.
+
+### Quieter logs for the expected 403
+When the page fallback succeeds, the preceding `403` of `assignments/{id}/v1` is expected but still logged as a warning (without content). Log it at debug level in that case.
 
 ## Later (v1+)
 

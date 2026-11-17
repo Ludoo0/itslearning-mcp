@@ -5,16 +5,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-18
+
 ### Added
 
 - `itslearning_get_task`: for task types the assignment API does not describe (polls, choices, `CustomActivity`), the instructions are now read from the task's web page via the web session and returned redacted as `text` with `detailsSource: "page"`. `detailsUnavailable` is only `true` if no text could be obtained at all.
+- The smoke test checks the details of several tasks (preferring activities) and reports how many texts came from the task page.
 
 ### Changed
 
 - HTML → text conversion drops page chrome (`nav`, `header`, `footer`) as well as `noscript`, `template` and `svg` content, normalises CRLF line breaks, removes empty list items and keeps list item content on the bullet line.
 - Docker base image pinned to `oven/bun:1.4.4-alpine` (same Bun version as CI).
-- Biome for linting and formatting (`bun run lint` in CI, `bun run format`).
-- The release workflow can be started manually as a dry run (full pipeline, nothing published).
+- Dependencies: TypeScript 7 for type checking; GitHub Actions updated (`actions/checkout@v7`, Docker actions to their Node 24 majors).
+- Development: Biome for linting and formatting (`bun run lint` in CI, `bun run format`); Dependabot version updates for Bun, GitHub Actions and Docker; the release workflow can be started manually as a dry run (full pipeline, nothing published).
+
+### Fixed
+
+- HTML sanitisation removes nested or overlapping markup completely, and HTML entities in links are no longer decoded twice (CodeQL `js/incomplete-multi-character-sanitization`, `js/double-escaping`). Output is plain text for agents, so the practical impact was low.
 
 ## [0.1.0] - 2026-11-17
 
@@ -48,5 +55,6 @@ First public release.
 - Group message threads without a name get a readable title (`Group (N participants) with Teacher X`) instead of a list of pseudonyms.
 - `total` for message threads and messages is only returned when itslearning reports a meaningful value (the API always reports 0).
 
-[Unreleased]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Ludoo0/itslearning-mcp/releases/tag/v0.1.0
