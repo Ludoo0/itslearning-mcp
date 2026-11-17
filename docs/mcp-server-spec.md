@@ -290,7 +290,7 @@ The logger replaces registered secrets (password, tokens, API key) and reduces U
 
 ### 8.2 Docker
 
-- `Dockerfile`: `oven/bun:1-alpine`, no bundling (unpdf/mammoth are imported dynamically), runs as user `bun` (UID 1000), `VOLUME /data`, `HEALTHCHECK` on `/healthz`, defaults `MCP_TRANSPORT=http`, `MCP_HOST=0.0.0.0`. Image size ~220 MB.
+- `Dockerfile`: `oven/bun:1.4.4-alpine` (pinned to the Bun version used in CI; kept up to date by Dependabot), no bundling (unpdf/mammoth are imported dynamically), runs as user `bun` (UID 1000), `VOLUME /data`, `HEALTHCHECK` on `/healthz`, defaults `MCP_TRANSPORT=http`, `MCP_HOST=0.0.0.0`. Image size ~220 MB.
 - `compose.yaml`: port bound to `127.0.0.1:3000`, credentials and API key as file-based secrets from `./secrets/`, read-only root filesystem, `tmpfs /tmp`, all capabilities dropped, `no-new-privileges`.
 - Images are published to GHCR on version tags: `ghcr.io/ludoo0/itslearning-mcp:<version>` and `:latest` (`linux/amd64`, `linux/arm64`).
 
