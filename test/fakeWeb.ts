@@ -75,6 +75,17 @@ export function createFakeWeb(): FakeWeb {
           `<iframe src="https://platform.itslearning.com/LoginSSO.aspx?FirstName=Jonas&amp;ElementId=${id}&amp;Signature=SIG-SECRET"></iframe>`,
         );
       }
+      // Task page of a CustomActivity (fallback for task details): page chrome + instructions with names
+      if (url.pathname === "/CustomActivity/CustomActivityOverview.aspx") {
+        if (!cookie.includes("ASP.NET_SessionId=sess1")) return html('<li id="ctl00_ContentPlaceHolder1_nativeLogin">Log in</li>');
+        return html(
+          '<header>Logged in as Jonas Beispielmann</header><nav><a href="/Course/Course.aspx?CourseID=12">Courses</a></nav>' +
+            "<h1>Reading log</h1><p>Please read chapter 3 by Friday and write half a page about it. " +
+            "Questions to Sabine Lindqvist (lindqvist@school.example) or ask Mia Sonnenfeld.</p>" +
+            '<div data-cfg="x">launch %7B%22PersonId%22%3A3001%7D</div>' +
+            "<footer>Imprint · Privacy</footer>",
+        );
+      }
     }
     // --- platform / resource server ---
     if (url.host === "platform.itslearning.com" && url.pathname === "/LoginSSO.aspx") {

@@ -50,9 +50,12 @@ export type ApiTask = {
   ElementType?: string | null;
   LearningToolId?: number | null;
   Homework?: boolean;
+  /** Web page of the task (used as fallback when the assignment API refuses details). Never returned to agents. */
+  Url?: string | null;
+  ContentUrl?: string | null;
 };
 
-/** Person-Objekt in PublishedBy (Stream, Newsfeed, Bulletins). */
+/** Person object in PublishedBy (stream, news feed, bulletins). */
 export type ApiPublishedBy = {
   PersonId: number;
   FirstName?: string | null;

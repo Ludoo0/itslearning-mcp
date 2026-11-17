@@ -73,9 +73,30 @@ describe("itslearning_get_task", () => {
     expect(text).not.toMatch(/Jonas|Beispielmann|SECRET123|filerepository|demo\.itslearning/);
   });
 
-  test("403 (CustomActivity) → base data with detailsUnavailable", async () => {
-    const res = await getTask(await fakeContext(), { elementId: 7002 });
+  test("403 (CustomActivity) → instructions from the task page, redacted, without page chrome", async () => {
+    const ctx = await fakeContext();
+    const res = (await getTask(ctx, { elementId: 7002 })) as Record<string, unknown>;
+    expect(res).toMatchObject({ elementId: 7002, type: "activity", detailsUnavailable: false, detailsSource: "page" });
+    const text = String(res.text);
+    const mia = ctx.redactor.people.resolve(3001).display;
+    expect(text).toContain("Please read chapter 3 by Friday");
+    expect(text).toContain(`Questions to Teacher Lindqvist ([email]) or ask ${mia}.`);
+    expect(text).toContain("[encoded data removed]");
+    // header/nav/footer are page chrome, not task content
+    expect(text).not.toMatch(/Logged in as|Courses|Imprint/);
+    expect(text).not.toMatch(/Jonas|Beispielmann|Sabine|Sonnenfeld|PersonId|school\.example|itslearning\.com/);
+  });
+
+  test("task page not available → base data with detailsUnavailable, no error", async () => {
+    const ctx = await fakeContext({ ssoUrl: async () => Promise.reject(new ToolError("UPSTREAM_ERROR", "down")) });
+    const res = await getTask(ctx, { elementId: 7002 });
     expect(res).toMatchObject({ elementId: 7002, detailsUnavailable: true, type: "activity" });
+    expect((res as Record<string, unknown>).text).toBeUndefined();
+  });
+
+  test("assignment API available → detailsSource api, no page request", async () => {
+    const res = await getTask(await fakeContext(), { elementId: 7001 });
+    expect(res).toMatchObject({ detailsUnavailable: false, detailsSource: "api" });
   });
 
   test("unknown task → NOT_FOUND / FORBIDDEN", async () => {

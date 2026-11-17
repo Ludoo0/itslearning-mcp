@@ -133,6 +133,7 @@ describe("Leak test via the MCP protocol", () => {
       ["itslearning_list_courses", { includeInactive: true }],
       ["itslearning_list_tasks", { status: "all" }],
       ["itslearning_get_task", { elementId: 7001 }],
+      ["itslearning_get_task", { elementId: 7002 }], // instructions from the task's web page
       ["itslearning_list_news", {}],
       ["itslearning_list_bulletins", { courseId: 12 }],
       ["itslearning_list_message_threads", {}],

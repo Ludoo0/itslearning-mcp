@@ -41,7 +41,8 @@ export function looksLikeHtml(s: string): boolean {
 
 export function htmlToText(html: string, labels: Labels = LABELS.en): string {
   let s = html;
-  s = s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  // Non-content: code, styles and page chrome (navigation, header, footer) of web pages
+  s = s.replace(/<(script|style|noscript|template|svg|nav|header|footer)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
   s = s.replace(/<a\b[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href: string, inner: string) => {
     const text = inner.replace(/<[^>]+>/g, "").trim();
     const url = decodeEntities(href);

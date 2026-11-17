@@ -6,9 +6,8 @@ Open items after v0.1.0. Background: [`mcp-server-spec.md`](./mcp-server-spec.md
 
 ## Next (v0.2)
 
-### Task details fallback via page text
-Some tasks (`LearningToolElement`-based polls/choices, `CustomActivity`) are refused by `assignments/{id}/v1`, so `itslearning_get_task` returns `detailsUnavailable: true` without any assignment text.
-**Idea:** fetch the element page through the existing download flow (`FileService`, `kind: "page"`) and return the redacted page text as `text`.
+### Verify the task details fallback against a real instance
+Implemented (task page text via web session, `detailsSource: "page"`), tested with fake pages only. Check with real polls/choices and `CustomActivity` tasks how much interface text remains in `text` and whether the page structure needs more filtering.
 
 ### Element type mapping (`LearningToolId`)
 `itslearning_list_course_files` cannot tell files, links, pages and tests apart up front – all non-folders are `LearningToolElement`; only `LearningToolId` (or the `ExtensionId` in `IconUrl`) distinguishes them. Collect the mapping from real instances and expose a `kind` such as `file` / `link` / `page` / `test`.
