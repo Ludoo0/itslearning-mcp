@@ -66,7 +66,7 @@ export class ApiClient {
     template: string,
     params: Record<string, string | number> = {},
     query: Query = {},
-    opts: { ttlS?: number } = {},
+    opts: { ttlS?: number /** HTTP statuses that are an expected outcome (logged at debug level) */; expectedStatuses?: number[] } = {},
   ): Promise<T> {
     const path = template.replace(/\{(\w+)\}/g, (_, k) => {
       if (params[k] === undefined) throw new Error(`Parameter ${k} missing for ${template}`);
@@ -75,14 +75,14 @@ export class ApiClient {
     const url = new URL(this.cfg.baseUrl + path);
     for (const [k, v] of Object.entries(query)) if (v !== undefined) url.searchParams.set(k, String(v));
     const ttlMs = (opts.ttlS ?? this.cfg.cacheTtlS) * 1000;
-    return this.cache.get(url.toString(), ttlMs, () => this.request<T>(template, url));
+    return this.cache.get(url.toString(), ttlMs, () => this.request<T>(template, url, opts.expectedStatuses));
   }
 
   clearCache() {
     this.cache.clear();
   }
 
-  private async request<T>(template: string, url: URL): Promise<T> {
+  private async request<T>(template: string, url: URL, expectedStatuses: number[] = []): Promise<T> {
     let authRetried = false;
     for (let attempt = 0; ; attempt++) {
       const token = await this.auth.getAccessToken();
@@ -122,7 +122,11 @@ export class ApiClient {
       }
 
       const body = await res.text().catch(() => "");
-      log.warn("API error", { endpoint: template, status: res.status, error: sanitizeErrorText(body) });
+      (expectedStatuses.includes(res.status) ? log.debug : log.warn)("API error", {
+        endpoint: template,
+        status: res.status,
+        error: sanitizeErrorText(body),
+      });
       throw mapStatus(res.status);
     }
   }

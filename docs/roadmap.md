@@ -18,9 +18,6 @@ The download chain needs about 8 requests per file. `LearningObjectId` and `Lear
 ### Task page fallback for polls and choices
 Since v0.2.0, `itslearning_get_task` reads the instructions from the task's web page when the assignment API refuses details. Verified against a real instance with a `CustomActivity` task (clean text, redacted). Still to check: `LearningToolElement`-based tasks that are refused as well (e.g. polls or project selections) – their pages are embedded via iframes and may contain more interface text or form elements.
 
-### Quieter logs for the expected 403
-When the page fallback succeeds, the preceding `403` of `assignments/{id}/v1` is expected but still logged as a warning (without content). Log it at debug level in that case.
-
 ## Later (v1+)
 
 - **Parent accounts:** the API has `children/{childId}/courses|tasks|plans|upcoming` endpoints; support selecting a child.

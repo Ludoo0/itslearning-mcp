@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The expected `403`/`404` of the assignment API for task types it does not describe is logged at debug level instead of as a warning (`itslearning_get_task` falls back to the task page; a failing fallback still logs a warning).
+
 ## [0.2.0] - 2026-11-18
 
 ### Added
