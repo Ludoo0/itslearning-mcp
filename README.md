@@ -1,5 +1,10 @@
 # itslearning-mcp
 
+[![CI](https://github.com/Ludoo0/itslearning-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Ludoo0/itslearning-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Ludoo0/itslearning-mcp)](https://github.com/Ludoo0/itslearning-mcp/releases/latest)
+[![Docker image](https://img.shields.io/badge/ghcr.io-ludoo0%2Fitslearning--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/Ludoo0/itslearning-mcp/pkgs/container/itslearning-mcp)
+[![License: MIT](https://img.shields.io/github/license/Ludoo0/itslearning-mcp)](LICENSE)
+
 A read-only [Model Context Protocol](https://modelcontextprotocol.io) server for **itslearning**, the learning platform used by many schools. It lets AI agents (Claude, or any other MCP client) read a student's tasks, news, course announcements, messages and course files – and **redacts personal data** before anything leaves the server.
 
 ```
@@ -256,6 +261,7 @@ The script fetches the real names (own account, threads, news, course participan
 
 ```bash
 bun install
+bun run lint        # Biome (bun run format to fix formatting)
 bun run typecheck
 bun test
 ```
