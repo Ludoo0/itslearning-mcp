@@ -1,21 +1,21 @@
 # itslearning MCP server – specification (v0.1)
 
-As of 2026-11-18 · Status: implemented (v0.2.0)
+As of 2026-11-18 · Status: implemented (v0.2.0; calendar, planner, experimental parent accounts, more redaction languages unreleased)
 Based on: [`itslearning-api.md`](./itslearning-api.md) (verified endpoints, ✅ = tested, ⏳ = still open) · Open items: [`roadmap.md`](./roadmap.md)
 
 ---
 
 ## 1. Goal and scope
 
-An MCP server that gives AI agents **read-only** access to an itslearning account: tasks, news, course announcements, messages and files. **Personal data is redacted** before it leaves the server.
+An MCP server that gives AI agents **read-only** access to an itslearning account: tasks, news, course announcements, messages, calendar, weekly plans and files. **Personal data is redacted** before it leaves the server.
 
 | In v0.1 | Not in v0.1 (non-goals) |
 |---|---|
 | Any itslearning instance (`ITSL_BASE_URL`) | Write actions (sending messages, submissions, comments) |
-| Student accounts with native login (user name/password) | Instances that only offer login via a third-party identity provider (Microsoft/Google/Feide/…) |
-| Tasks, news, bulletins, messages, course files, downloads | Calendar (unused at the reference instance; easy to add) |
-| Docker container or local process (stdio) | Parent accounts (the API has `children/{childId}/…` endpoints – see roadmap) |
-| One account per server process | Multiple accounts per process (run several containers instead) |
+| Student accounts with native login (user name/password); parent accounts **experimental** (5.13) | Instances that only offer login via a third-party identity provider (Microsoft/Google/Feide/…) |
+| Tasks, news, bulletins, messages, calendar, weekly plans, course files, downloads | Multiple accounts per process (run several containers instead) |
+| Docker container or local process (stdio) | |
+| One account per server process | |
 
 **Principles**
 
@@ -56,7 +56,7 @@ An MCP server that gives AI agents **read-only** access to an itslearning accoun
 | `api/` | REST client (limiter, TTL cache, retries, error mapping), typed endpoints |
 | `websession/` | Minimal browser: manual redirects, cookie jar, size limit, link extraction |
 | `files/` | fileRefs, download service, disk cache, text extraction |
-| `redaction/` | Person registry, labels (en/de), teacher directory, name dictionary, secret/URL filters, HTML → text |
+| `redaction/` | Person registry, labels (en/de/nb/sv/nl/fr), teacher directory, name dictionary, secret/URL filters, HTML → text |
 | `tools/` | One module per tool group: zod schema, handler, DTO mapping |
 | `log.ts` | Structured logging to stderr with mandatory scrubbing |
 
@@ -77,7 +77,7 @@ All values come from environment variables. Secrets also have a `*_FILE` variant
 | `MCP_PORT` | | `3000` | HTTP port |
 | `MCP_API_KEY` / `_FILE` | ✅ with `http` | – | Bearer key clients must send (≥ 32 characters) |
 | `MCP_ALLOWED_ORIGINS` | | empty | Allowed browser origins (comma-separated); requests with any other `Origin` header → 403 (DNS-rebinding protection) |
-| `REDACTION_LANGUAGE` | | `en` | Language of labels and placeholders: `en` or `de` (see 6.2) |
+| `REDACTION_LANGUAGE` | | `en` | Language of labels and placeholders: `en`, `de`, `nb`, `sv`, `nl` or `fr` (see 6.2); other values → configuration error |
 | `REDACTION_SECRET` / `_FILE` | | auto | HMAC secret for pseudonyms (≥ 16 characters). If missing, one is generated once and stored in `DATA_DIR/secret` |
 | `REDACTION_KEEP_WORDS` | | empty | Comma-separated words that are never replaced as a single name (see 6.4) |
 | `REDACT_TEACHERS` | | `false` | `true` → pseudonymise teachers as well (`Teacher-XXXX`) |
@@ -126,8 +126,8 @@ Invalid configuration → startup aborts with a clear error message that does no
 ## 5. Tools
 
 Conventions:
-- Names are prefixed `itslearning_`. All tools are annotated `readOnlyHint: true`.
-- IDs (course, task, thread, element) are numeric itslearning IDs, needed for follow-up calls. **`PersonId` is never emitted.**
+- 13 tools. Names are prefixed `itslearning_`. All tools are annotated `readOnlyHint: true`.
+- IDs (course, task, thread, element) are numeric itslearning IDs, needed for follow-up calls. **`PersonId` is never emitted** (the `childId` of parent accounts, 5.13, is a pseudonymous key).
 - **Files** are referenced only via `fileRef` (5.10).
 - Every result is returned as `structuredContent` **and** as text (summary + JSON). Everything an agent needs is in `structuredContent` – some clients (e.g. Claude Code) only show that part.
 - Errors: `isError: true` with a code (section 9).
@@ -135,15 +135,15 @@ Conventions:
 Common types:
 
 ```ts
-type Person = { display: string; role: "self" | "teacher" | "student" | "unknown" };
+type Person = { display: string; role: "self" | "teacher" | "student" | "child" | "unknown" };
 type FileRefDto = { fileRef: string; name: string; kind: "file" | "image" | "unknown" };
 ```
 
 | # | Tool | Input | Output (main fields) | Endpoints |
 |---|---|---|---|---|
-| 5.1 | `itslearning_overview` | `days` (7), `newsSince?`, `overdueMaxAgeDays` (60) | `overdue[]`, `dueSoon[]`, `news[]`, `unreadThreads`, `unreadThreadsPreview[]` | tasks, stream, threads |
-| 5.2 | `itslearning_list_courses` | `includeInactive`, `starredOnly` | `courses[]{courseId, title, code?, lastUpdated, newNotifications, newBulletins, starred, active}` | `courses/v1`, `v2`, `cards/starred` |
-| 5.3 | `itslearning_list_tasks` | `courseId?`, `status` (open\|all), `dueWithinDays?`, `homeworkOnly`, `activeCoursesOnly`, `limit`, `offset` | `tasks[]`, `total`, `hasMore` | `tasks/v1`, `courses/{id}/tasks/v1` |
+| 5.1 | `itslearning_overview` | `days` (7), `newsSince?`, `overdueMaxAgeDays` (60), `childId?` | `overdue[]`, `dueSoon[]`, `news[]`, `unreadThreads`, `unreadThreadsPreview[]` | tasks, stream, threads |
+| 5.2 | `itslearning_list_courses` | `includeInactive`, `starredOnly`, `childId?` | `courses[]{courseId, title, code?, lastUpdated, newNotifications, newBulletins, starred, active}` | `courses/v1`, `v2`, `cards/starred` |
+| 5.3 | `itslearning_list_tasks` | `courseId?`, `status` (open\|all), `dueWithinDays?`, `homeworkOnly`, `activeCoursesOnly`, `limit`, `offset`, `childId?` | `tasks[]`, `total`, `hasMore` | `tasks/v1`, `courses/{id}/tasks/v1`; with child: `children/{id}/tasks/v1`, `children/{id}/courses/{courseId}/tasks/v1` |
 | 5.4 | `itslearning_get_task` | `elementId` | task + `text`, `mandatory`, `submissionType`, `completionMode`, `lateSubmissionAllowed`, `hasAnswer`, `canSubmit`, `files[]`, `detailsSource`, `detailsUnavailable` | `assignments/{id}/v1`, fallback: task `ContentUrl` via web session |
 | 5.5 | `itslearning_list_news` | `courseId?`, `since?`, `limit` | `items[]{id, published, course, courseId?, author, text, kind, elementId?, fileRef?, bulletinId?, images?}`, `hasMore` | `notifications/stream/v2`, `courses/{id}/stream/v1` |
 | 5.6 | `itslearning_list_bulletins` | `courseId`, `limit`, `offset`, `includeResources` | `bulletins[]{id, published, activeUntil, author, text, pinned, link?, images[], resources[], commentsCount}`, `total`, `hasMore` | `courses/{id}/bulletins/v1`, `courses/bulletins/{id}/elements/v1` |
@@ -151,6 +151,9 @@ type FileRefDto = { fileRef: string; name: string; kind: "file" | "image" | "unk
 | 5.8 | `itslearning_get_message_thread` | `threadId`, `limit`, `beforeMessageId?` | `messages[]{messageId, at, from, text, edited, deleted, system, attachment?, link?}`, `hasMore` | `messagethreads/{id}/messages/v3` |
 | 5.9 | `itslearning_list_course_files` | `courseId`, `folderId?`, `recursive`, `maxDepth` | `items[]{elementId, title, kind, elementType, path, depth, parentFolderId?, homework, active, fileRef?}`, `truncated` | `courses/{id}/resources/v1`, `folders/{id}/resources/v1` |
 | 5.10 | `itslearning_download_file` | `fileRef`, `mode` (auto\|text\|blob\|both), `maxTextChars` | metadata + `text` (redacted) and/or file/image content | see 5.10 |
+| 5.11 | `itslearning_list_calendar` | `courseId?`, `from?` (today), `days` (14, max. 90), `limit` (50) | `from`, `to`, `events[]{eventId, title, start, end, type, location, courseId?, description?}`, `total`, `hasMore` | `calendar/events/v1`, `courses/{id}/calendarevents/v1` |
+| 5.12 | `itslearning_list_plans` | `courseId?`, `from?` (today), `days` (14, max. 90), `includeDetails` (true), `limit` (30) | `from`, `to`, `plans[]{planId, title, course, courseId?, topicId?, topic?, start, end, classHours?, description?, learningObjectives?, elements?[]{elementId, title, type, homework, fileRef?}}`, `total`, `hasMore`, `unavailableCourses?` | `planner/v1`, `planner/plansinfo/v1` |
+| 5.13 | `itslearning_list_children` | – | `parentAccount`, `children[]{childId, display, role}`, `total` | `person/v1`, `children/v1` |
 
 Details:
 
@@ -158,6 +161,9 @@ Details:
 - **Tasks (5.3/5.4):** sorted by deadline (none last). "Open" = status does not look completed. `activeCoursesOnly` restricts to tasks of `courses/v1`. If `assignments/{id}/v1` refuses access (e.g. `CustomActivity`, polls), `get_task` opens the task's `ContentUrl` (itslearning URLs only) through the web session (`FileService.fetchPage`, same SSO → cookie → iframe flow as downloads), registers the course participants and returns the redacted page text as `text` with `detailsSource: "page"`; if the page yields a file, its extracted text is used. Page chrome (`nav`/`header`/`footer`) is dropped, but some interface labels may remain. Only if no text can be obtained, `detailsUnavailable: true`. With the API, `detailsSource: "api"`.
 - **Threads (5.7):** title = thread name (redacted) → course recipients → for one-to-one/small groups the participant labels → for larger groups `Group (N participants) with Teacher X`. Groups with more than 5 participants only list teachers. `total` is only returned when itslearning provides a meaningful value (the API always reports 0 for threads/messages); `hasMore` is authoritative.
 - **Messages (5.8):** chronological; deleted messages have empty text; attachments become `fileRef`s.
+- **Calendar (5.11):** unverified against real data (the reference instance has no events). Without `courseId`, `calendar/events/v1` is called with `fromDate` (required; there is no `toDate`) and the period end is filtered client-side; with `courseId`, `courses/{id}/calendarevents/v1` with `fromDate`/`toDate`. At most 5 pages of 100. Events overlapping the period are sorted by start; `type` is the itslearning event type (`Course`, `Project`, `Personal`, `Hierarchy`), `location` the (redacted) course/project title. Course participants are registered before descriptions are redacted.
+- **Plans (5.12):** unverified against real data. `planner/v1` requires a `courseId` and dates with a time part (`YYYY-MM-DDT00:00:00`, UTC); without `courseId` the server queries every current course (`courses/v1`) and counts failing courses in `unavailableCourses` (with an explicit `courseId` the error is returned). Plans are de-duplicated, filtered to the period and sorted by start/order. With `includeDetails`, `planner/plansinfo/v1?plansIds[0]=…&plansIds[1]=…` (chunks of 20, best effort) adds topic, learning objectives and attached elements; elements other than folders get an `e_` fileRef. Planner URLs and icons are not emitted.
+- **Parent accounts (5.13, EXPERIMENTAL):** built from the API help pages, not verified against a real parent account. Children come from `children/v1` (fallback: `person/v1` `Children`) and are registered with the role `child` before anything is redacted; `childId` is a pseudonymous 8-hex key (`PersonRegistry.personKey`, HMAC of the `PersonId` with the redaction secret) that the server maps back to the `PersonId` internally – the real id is never emitted. `childId` on 5.1/5.2/5.3 selects the child (default: the only child; several children without `childId` or an unknown `childId` → `INVALID_INPUT`; ignored for student accounts, whose `person/v1` has no children – no child endpoint is called). Child courses come from `children/{id}/courses/v1`; their `Teachers[]` are registered as teachers. Limits: no counters/favorites/former courses for child courses, `itslearning_get_task` does not support child tasks, news and messages in the overview stay the parent's own, `children/{id}/plans|upcoming` are not used.
 
 ### 5.10 Files
 
@@ -205,16 +211,17 @@ Once a person is known as a teacher, this is remembered across restarts via `tea
 
 ### 6.2 Labels (`REDACTION_LANGUAGE`)
 
-| Role | `en` (default) | `de` |
-|---|---|---|
-| own account | `Me` | `Ich` |
-| teacher with salutation | `Mrs Müller` | `Frau Müller` |
-| teacher without salutation | `Teacher Müller` | `Lehrkraft Müller` |
-| teacher with `REDACT_TEACHERS=true` | `Teacher-7F3A` | `Lehrkraft-7F3A` |
-| student | `Student-7F3A` | `Schüler:in-7F3A` |
-| unknown role | `Person-7F3A` | `Person-7F3A` |
+| Role | `en` (default) | `de` | `nb` | `sv` | `nl` | `fr` |
+|---|---|---|---|---|---|---|
+| own account | `Me` | `Ich` | `Jeg` | `Jag` | `Ik` | `Moi` |
+| teacher with salutation | `Mrs Müller` | `Frau Müller` | `Fru Müller` | `Fru Müller` | `Mevrouw Müller` | `Madame Müller` |
+| teacher without salutation | `Teacher Müller` | `Lehrkraft Müller` | `Lærer Müller` | `Lärare Müller` | `Docent Müller` | `Enseignant Müller` |
+| teacher with `REDACT_TEACHERS=true` | `Teacher-7F3A` | `Lehrkraft-7F3A` | `Lærer-7F3A` | `Lärare-7F3A` | `Docent-7F3A` | `Enseignant-7F3A` |
+| student | `Student-7F3A` | `Schüler:in-7F3A` | `Elev-7F3A` | `Elev-7F3A` | `Leerling-7F3A` | `Élève-7F3A` |
+| child of a parent account (experimental) | `Child-7F3A` | `Kind-7F3A` | `Barn-7F3A` | `Barn-7F3A` | `Kind-7F3A` | `Enfant-7F3A` |
+| unknown role | `Person-7F3A` | `Person-7F3A` | `Person-7F3A` | `Person-7F3A` | `Persoon-7F3A` | `Personne-7F3A` |
 
-Placeholders: `[email]`, `[phone]`, `[itslearning link]`, `[link removed]`, `[encoded data removed]`, `[name]` (de: `[E-Mail]`, `[Telefon]`, `[itslearning-Link]`, `[Link entfernt]`, `[kodierte Daten entfernt]`, `[Name]`).
+Placeholders (`en`): `[email]`, `[phone]`, `[itslearning link]`, `[link removed]`, `[encoded data removed]`, `[name]`, `[ID]`; the other languages translate them (e.g. de `[E-Mail]`, `[Telefon]`, `[itslearning-Link]`, `[Link entfernt]`, `[kodierte Daten entfernt]`, `[Name]`). All label sets live in `src/redaction/labels.ts`. The `child` role overrides every other role hint.
 
 The 4-character pseudonym is the start of `HMAC-SHA256(REDACTION_SECRET, baseUrl | PersonId)`; on collision it is extended to 6 characters. Pseudonyms are stable across restarts.
 
@@ -241,7 +248,7 @@ Pipeline:
 1. HTML → text/Markdown (scripts/styles removed, links only kept if shareable).
 2. URL filters (6.5), URL-encoded data blobs → `[encoded data removed]`, ID pairs (`PersonId=123`, `"UserId": 5`) → `[ID]`.
 3. E-mail addresses and phone numbers.
-4. **Name dictionary** from the registry: full name, "First Last", "Last, First", "F. Last", short name; for teachers also salutation variants ("Mrs/Mr/Ms/Frau/Herr Last"); single first/last names if ≥ 3 characters and not a stop word or in `REDACTION_KEEP_WORDS`. Word-boundary based, case-insensitive, Unicode-aware, longest match first. The same spelling for two different people → `[name]`.
+4. **Name dictionary** from the registry: full name, "First Last", "Last, First", "F. Last", short name; for teachers also salutation variants (`Mr`, `Mrs`, `Ms`, `Miss`, `Dr`, `Frau`, `Herr`, `Herrn`, `Fr.`, `Hr.`, `Fru`, `Fröken`, `Mevrouw`, `Mevr.`, `Mw.`, `Meneer`, `Dhr.`, `Juf`, `Juffrouw`, `Meester`, `Madame`, `Mme`, `Mademoiselle`, `Mlle`, `Monsieur`, `M.` + last name; salutations are never matched on their own); single first/last names if ≥ 3 characters and not a stop word or in `REDACTION_KEEP_WORDS`. Word-boundary based, case-insensitive, Unicode-aware, longest match first. The same spelling for two different people → `[name]`.
 5. Length limit per tool.
 
 **`REDACTION_KEEP_WORDS` trade-off:** a person's last name can also be an ordinary word (e.g. a place adjective in an event title), which then gets replaced everywhere. Listing it keeps the word – but then it is also kept where it really refers to that person.
@@ -309,7 +316,7 @@ The logger replaces registered secrets (password, tokens, API key) and reduces U
 | `FILE_REF_UNKNOWN` | invalid or no longer resolvable fileRef | fetch the list again |
 | `FILE_TOO_LARGE` | > `MAX_FILE_MB` | with size |
 | `NOT_A_FILE` | element/mode yields no file or text | with hint |
-| `INVALID_INPUT` | schema validation | with field |
+| `INVALID_INPUT` | schema validation; unknown or missing `childId` (parent accounts) | with field / hint |
 
 Raw API error texts (they contain IDs such as `PersonId=…`) are never passed through; they are logged sanitised only.
 

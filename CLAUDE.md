@@ -33,9 +33,9 @@ Bun + TypeScript (strict) + `@modelcontextprotocol/sdk` + `zod`. No build step; 
 | `src/context.ts` | `AppContext`, `ensureReady()` (login, own account as "Me", warm up the name dictionary with thread participants) |
 | `src/auth/` | OAuth2 password grant with the mobile app's client ID, **rotating refresh token** → `DATA_DIR/state.json`; wrong password = fatal (no retry, avoid account lockout) |
 | `src/api/` | REST client (limiter, TTL cache, retries), typed endpoints |
-| `src/redaction/` | Person registry (roles, HMAC pseudonyms), labels (`labels.ts`, en/de), `teachers.json` (salutation, hot reload), name dictionary, secret/URL filters, HTML → text |
+| `src/redaction/` | Person registry (roles, HMAC pseudonyms), labels (`labels.ts`, en/de/nb/sv/nl/fr), `teachers.json` (salutation, hot reload), name dictionary, secret/URL filters, HTML → text |
 | `src/files/`, `src/websession/` | fileRefs (`e_`/`a_`/`m_`/`i_`, stateless), download flows (SSO → web session → iframes → `DownloadRedirect`), text extraction (unpdf, mammoth), disk cache |
-| `src/tools/` | One module per tool group; DTOs are **allowlists** (never pass raw API responses through) |
+| `src/tools/` | One module per tool group; DTOs are **allowlists** (never pass raw API responses through); `schedule.ts` = calendar + planner, `children.ts` = experimental parent accounts (`childId`) |
 | `src/check/` | Compatibility check (`bun run check <url>`; part of the Docker image): public checks + optional account checks, status/counts only |
 | `src/cli/` | Shared terminal prompts (hidden password input) |
 | `scripts/` | `call.ts` (call a tool against a real instance), `smoke.ts`/`smokeCore.ts` (leak check), `dev/probe.ts` (API exploration) |

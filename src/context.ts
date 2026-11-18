@@ -28,6 +28,14 @@ export type ItslearningApi = Pick<
   | "ssoUrl"
   | "assignmentFileLocation"
   | "courseParticipants"
+  | "children"
+  | "childCourses"
+  | "childTasks"
+  | "childCourseTasks"
+  | "calendarEvents"
+  | "courseCalendarEvents"
+  | "coursePlans"
+  | "plansInfo"
 >;
 
 export type AppContext = {

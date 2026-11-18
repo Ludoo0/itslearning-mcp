@@ -21,6 +21,38 @@ export type ApiPerson = {
   CanAccessCourses?: boolean;
   CanAccessMessageSystem?: boolean;
   CanAccessInstantMessageSystem?: boolean;
+  /** Children of a parent account (deprecated by itslearning in favour of children/v1; empty for students). */
+  Children?: ApiChild[] | null;
+};
+
+/**
+ * Child of a parent account (children/v1 → ChildV2, person/v1 → Child). Fields per the public API help pages.
+ * EXPERIMENTAL: not verified against a real parent account.
+ */
+export type ApiChild = {
+  PersonId: number;
+  FirstName?: string | null;
+  LastName?: string | null;
+  FullName?: string | null;
+  /** Never returned to agents (identifies the school). */
+  School?: string | null;
+};
+
+/** Teacher of a child's course (PersonSimpleWithHierarchyExtendedRole). EXPERIMENTAL, unverified. */
+export type ApiChildCourseTeacher = {
+  PersonId: number;
+  FirstName?: string | null;
+  LastName?: string | null;
+  FullName?: string | null;
+};
+
+/** Course of a child (children/{childId}/courses/v1 → ChildCourse). EXPERIMENTAL, unverified. */
+export type ApiChildCourse = {
+  CourseId: number;
+  Title: string;
+  CourseCode?: string | null;
+  FriendlyName?: string | null;
+  Teachers?: ApiChildCourseTeacher[] | null;
 };
 
 export type ApiCourse = {
@@ -202,4 +234,64 @@ export type ApiAssignment = {
   AnswerId?: number | null;
   CanSubmitOrEditAnswer?: boolean;
   LearningObjectiveSettings?: { CourseId?: number; CourseTitle?: string | null } | null;
+};
+
+// ---------- Calendar and planner ----------
+// Field names from the public API help pages (resource models CalendarEventV2, CalendarEvent,
+// PlanPreview, PlanWithObjectivesAndElements). The endpoints answer at a real instance, but these
+// shapes are UNVERIFIED against real data (no instance with calendar/planner content seen yet).
+
+/** calendar/events/v1 (CalendarEventV2). EventType: Course | Project | Personal | Hierarchy. */
+export type ApiCalendarEvent = {
+  EventId: number;
+  FromDate?: string | null;
+  ToDate?: string | null;
+  EventTitle?: string | null;
+  Description?: string | null;
+  ImportDescription?: string | null;
+  EventType?: string | null;
+  LocationId?: number | null;
+  LocationTitle?: string | null;
+};
+
+/** courses/{courseId}/calendarevents/v1 (CalendarEvent). */
+export type ApiCourseCalendarEvent = {
+  Id: number;
+  FromDate?: string | null;
+  ToDate?: string | null;
+  EventTitle?: string | null;
+  Description?: string | null;
+  ImportDescription?: string | null;
+  CourseId?: number | null;
+  LocationTitle?: string | null;
+};
+
+/** planner/v1 (PlanPreview). LocationType: Course | Project. Start/Stop are null if not set. */
+export type ApiPlanPreview = {
+  PlanId: number;
+  TopicId?: number | null;
+  Order?: number | null;
+  LocationId?: number | null;
+  LocationType?: string | null;
+  LocationTitle?: string | null;
+  PlanName?: string | null;
+  PlanDescription?: string | null;
+  Start?: string | null;
+  Stop?: string | null;
+  ClassHours?: number | null;
+};
+
+/** planner/plansinfo/v1 (PlanWithObjectivesAndElements) – CoursePlannerUrl and IconUri are deliberately not modeled. */
+export type ApiPlanInfo = {
+  PlanId: number;
+  CourseId?: number | null;
+  CourseName?: string | null;
+  PlanTopicName?: string | null;
+  PlanTitle?: string | null;
+  PlanDescription?: string | null;
+  PlanStartDateTime?: string | null;
+  PlanEndDateTime?: string | null;
+  LearningObjectives?: { Id?: number; Title?: string | null; Description?: string | null }[] | null;
+  /** Type: ElementType enum name (e.g. LearningToolElement, Assignment, FolderFile). */
+  Elements?: { Id: number; Title?: string | null; Type?: string | null; IsMarkedAsHomework?: boolean }[] | null;
 };

@@ -130,6 +130,7 @@ describe("Leak test via the MCP protocol", () => {
 
     const calls: [string, Record<string, unknown>][] = [
       ["itslearning_overview", {}],
+      ["itslearning_list_children", {}],
       ["itslearning_list_courses", { includeInactive: true }],
       ["itslearning_list_tasks", { status: "all" }],
       ["itslearning_get_task", { elementId: 7001 }],
@@ -138,6 +139,8 @@ describe("Leak test via the MCP protocol", () => {
       ["itslearning_list_bulletins", { courseId: 12 }],
       ["itslearning_list_message_threads", {}],
       ["itslearning_get_message_thread", { threadId: 9001 }],
+      ["itslearning_list_calendar", { days: 90 }],
+      ["itslearning_list_plans", {}],
     ];
     const outputs: string[] = [];
     for (const [name, args] of calls) {

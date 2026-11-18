@@ -16,7 +16,9 @@ Sources: the public API help pages at `/restapi/help` plus three probe runs with
 | Read messages | ✅ | `GET /restapi/personal/instantmessages/messagethreads/v4` |
 | List course resources | ✅ | `GET /restapi/personal/courses/{courseId}/resources/v1` |
 | Download files | ✅ | Message attachments/images: tokenized `filerepository` URL directly; course files: SSO URL → web session → `DownloadRedirect.ashx` (verified with a PDF) |
-| Calendar | ⚠️ empty | API and iCal feed return 0 events – the reference instance does not use the calendar |
+| Calendar | ⚠️ empty | API and iCal feed return 0 events – the reference instance does not use the calendar (tool implemented, unverified with data) |
+| Weekly plans (planner) | ⏳ | `GET /restapi/personal/planner/v1?courseId=…` (tool implemented; at the reference instance a student account gets `403 "User does not have access to plans in course …"` – reported as `unavailableCourses`) |
+| Parent accounts | ⏳ | `GET /restapi/personal/children/v1` + `children/{childId}/…` (experimental, no parent account tested) |
 
 ## General
 
@@ -66,7 +68,7 @@ Observed:
 
 `GET /restapi/personal/person/v1` → object with `PersonId`, `FirstName`, `LastName`, `FullName`, `ProfileImageUrl`, `Language`, `TimeZoneId`, `Children[]`, permission flags (`CanAccessMessageSystem`, `CanAccessCalendar`, `CanAccessCourses`, …) and **`iCalUrl` / `iCalFavoriteOnlyUrl`** (secret `webcal://` feed URLs containing `PersonId` + `Guid` → treat like a password).
 
-`Children` is empty for a student account; `/restapi/personal/children/v1` returns 0 entries.
+`Children` is empty for a student account; `/restapi/personal/children/v1` returns 0 entries (see "Children (parent accounts)").
 
 ### Courses
 
@@ -172,7 +174,7 @@ The API provides no file URL, so the path goes through the web UI. A cookie jar 
 ```
 
 Observations:
-- `LearningObjectId` and `LearningObjectInstanceId` from the `DownloadRedirect` link are **also in the resources API**. Possible shortcut: once the `resource.itslearning.com` session exists, call `DownloadRedirect.ashx` directly with the IDs from the API. ⏳ (not tested yet)
+- The resources API has the fields `LearningObjectId` and `LearningObjectInstanceId`, but at the reference instance they are **always `0`** – in the folder listings and in the element detail (checked for 107 file elements). Calling `DownloadRedirect.ashx` directly with the ids from the API is therefore not possible; the ids only exist in the `DownloadRedirect` link on the `File/View` page. ✅
 - The session URLs (`MobileAppLoginSso`, `ProcessLogin`, `platform…/LoginSSO.aspx`, `File/View.aspx`) carry signatures as well as **`FirstName`, `LastName`, `Email`, `UserName`, `PersonId` as query parameters**. They must never be logged or handed to agents.
 - About 8 requests per file → reuse the session and cache downloads locally.
 - Pages that are not files (links, notes, embedded tools) can contain launch parameters of external learning tools as **URL-encoded JSON including `PersonId`** – these must be stripped from page text.
@@ -184,7 +186,34 @@ Observations:
 - `GET /calendar/events/v1` **requires `fromDate`** (400 otherwise). With `fromDate` = today −7 days: 0 entries.
 - `GET /courses/{courseId}/calendarevents/v1?fromDate=…`: 0 entries in 3 courses.
 - iCal feed (`iCalUrl`, replace `webcal://` with `https://`): 200, valid `VCALENDAR`, but 0 `VEVENT`. The server wrongly serves it as `text/html`.
-- → The reference instance does not use the itslearning calendar. Left out of the MCP server for now; deadlines come via tasks.
+- → The reference instance does not use the itslearning calendar; deadlines come via tasks.
+- **Implemented** as `itslearning_list_calendar` from the help-page models, ⏳ unverified with real events:
+  - `calendar/events/v1?fromDate=YYYY-MM-DD&PageIndex=…&PageSize=…` (`CalendarEventV2`): `EventId`, `FromDate`, `ToDate`, `EventTitle`, `Description`, `ImportDescription`, `EventType` (`Course`, `Project`, `Personal`, `Hierarchy`), `LocationId`, `LocationTitle`. No `toDate` parameter → the period end is filtered client-side.
+  - `courses/{courseId}/calendarevents/v1?fromDate=…&toDate=…` (`CalendarEvent`): `Id`, `FromDate`, `ToDate`, `EventTitle`, `Description`, `ImportDescription`, `CourseId`, `LocationTitle`.
+  - Neither model contains person objects; free texts are redacted with the course dictionaries. `iCalUrl` is never used.
+
+### Planner (weekly/lesson plans)
+
+⏳ Implemented as `itslearning_list_plans` from the help-page models; the reference instance returned no plans.
+
+- `GET /planner/v1?courseId=…&startDate=…&stopDate=…` (`PlanPreview`) → `{ EntityArray }` with `PlanId`, `TopicId`, `Order`, `LocationId`, `LocationType` (`Course`, `Project`), `LocationTitle`, `PlanName`, `PlanDescription`, `Start`, `Stop` (null if not set), `ClassHours`.
+  - **`courseId` is required** – there is no cross-course listing; the server loops over the current courses.
+  - **Dates need a time part** (`YYYY-MM-DDTHH:MM:SS`, sent as UTC midnight); returns plans that start or end within the period.
+- `GET /planner/plansinfo/v1?plansIds[0]=…&plansIds[1]=…` (`PlanWithObjectivesAndElements`, array, indexed query parameters) → `PlanId`, `CourseId`, `CourseName`, `PlanTopicName`, `PlanTitle`, `PlanDescription`, `PlanStartDateTime`, `PlanEndDateTime`, `LearningObjectives[]{Id, Title, Description}`, `Elements[]{Id, Title, Type, IsMarkedAsHomework}`. `CoursePlannerUrl` and `IconUri` are not used. `Elements[].Id` is an element id (downloadable via `e_` fileRef).
+- `children/{childId}/plans/v1` exists for parent accounts but is not used.
+
+### Children (parent accounts)
+
+⏳ **Experimental**, built from the help pages; not verified against a real parent account. A student account has no `Children` in `person/v1`, so the server never calls these endpoints for students.
+
+| Endpoint | Fields used |
+|---|---|
+| `GET /children/v1` (`ChildV2`) | `PersonId`, `FirstName`, `LastName`, `FullName` (`School` is never emitted). `person/v1` → `Children[]` (deprecated) is the fallback. |
+| `GET /children/{childId}/courses/v1` (`ChildCourse`) | `CourseId`, `Title`, `CourseCode`, `Teachers[]{PersonId, FirstName, LastName, FullName}` – no counters, favorites or former courses |
+| `GET /children/{childId}/tasks/v1` | task schema as `tasks/v1`; per the help page only tasks that are not completed and not hidden |
+| `GET /children/{childId}/courses/{courseId}/tasks/v1` | tasks of one course of the child |
+
+Children are registered with the role `child` and teachers from `Teachers[]` as teachers before any text is redacted. Unknown: whether course participants and `assignments/{id}/v1` are readable for parents. `children/{childId}/plans/v1` and `…/upcoming/v1` are not used.
 
 ## Not working / not deployed
 
@@ -239,7 +268,8 @@ Observations:
 - [x] Course participants readable for a student account
 - [ ] Task attachments (`/assignments/{id}/files/{fileId}/v1`): no test data available yet
 - [ ] `LearningToolId` mapping (file vs. link vs. page vs. test)
-- [ ] `DownloadRedirect.ashx` shortcut using IDs from the API
+- [ ] Calendar and planner with real data (tools implemented)
+- [ ] Parent account (`children/…`, experimental support implemented)
 
 ## Probe scripts
 

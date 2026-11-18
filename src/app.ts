@@ -16,11 +16,13 @@ import { PersonRegistry } from "./redaction/registry";
 import { loadOrCreateSecret } from "./redaction/secretKey";
 import { TeacherDirectory } from "./redaction/teachers";
 import { registerBulletinTools } from "./tools/bulletins";
+import { registerChildTools } from "./tools/children";
 import { registerCourseTools } from "./tools/courses";
 import { registerFileTools } from "./tools/files";
 import { registerMessageTools } from "./tools/messages";
 import { registerNewsTools } from "./tools/news";
 import { registerOverviewTools } from "./tools/overview";
+import { registerScheduleTools } from "./tools/schedule";
 import { registerTaskTools } from "./tools/tasks";
 import { WebBrowser } from "./websession/browser";
 
@@ -29,8 +31,10 @@ const INSTRUCTIONS = `Read-only access to an itslearning account (a school learn
 - Tasks: itslearning_list_tasks, details via itslearning_get_task (elementId).
 - Courses: itslearning_list_courses (courseId); announcements of a course: itslearning_list_bulletins.
 - News: itslearning_list_news. Messages: itslearning_list_message_threads → itslearning_get_message_thread.
+- Schedule: itslearning_list_calendar (calendar events), itslearning_list_plans (weekly/lesson plans from the course planner). Both may be empty if the school does not use these features.
 - Files: tools return fileRef values (task attachments, message attachments, images, course files via itslearning_list_course_files) → itslearning_download_file. Default: PDF/DOCX/text are returned as redacted text in the field \`text\`.
 - Privacy: the account owner appears as "Me" (or the configured redaction language, e.g. "Ich"), teachers by last name ("Teacher Miller", optionally with salutation), other people as pseudonyms ("Student-7F3A", "Person-7F3A"). Email addresses, phone numbers and internal itslearning links are removed. Do not try to reconstruct redacted data.
+- Parent accounts (experimental, unverified): itslearning_list_children lists the children as pseudonyms ("Child-7F3A") with childId; pass childId to itslearning_overview, itslearning_list_tasks and itslearning_list_courses (default: the only child).
 - The server cannot change anything (no submissions, no sending messages).`;
 
 export function createServer(ctx: AppContext): McpServer {
@@ -42,6 +46,8 @@ export function createServer(ctx: AppContext): McpServer {
   registerBulletinTools(server, ctx);
   registerMessageTools(server, ctx);
   registerFileTools(server, ctx);
+  registerChildTools(server, ctx);
+  registerScheduleTools(server, ctx);
   return server;
 }
 

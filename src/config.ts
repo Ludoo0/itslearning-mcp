@@ -17,7 +17,7 @@ export type Config = {
   apiKey?: string;
   redactionSecret?: string;
   redactTeachers: boolean;
-  /** Language of person labels and placeholders inserted by the redaction ("Me" / "Ich" …). */
+  /** Language of person labels and placeholders inserted by the redaction ("Me" / "Ich" / "Jeg" …). */
   redactionLanguage: Language;
   /** Words never replaced as a single name (lowercase). */
   redactionKeepWords: string[];
@@ -88,7 +88,9 @@ const schema = z.object({
   MCP_API_KEY: z.string().min(32, "MCP_API_KEY must be at least 32 characters long").optional(),
   REDACTION_SECRET: z.string().min(16, "REDACTION_SECRET must be at least 16 characters long").optional(),
   REDACT_TEACHERS: boolish.default(false),
-  REDACTION_LANGUAGE: z.enum(LANGUAGES as [Language, ...Language[]]).default("en"),
+  REDACTION_LANGUAGE: z
+    .enum(LANGUAGES as [Language, ...Language[]], { error: `REDACTION_LANGUAGE must be one of ${LANGUAGES.join(", ")}` })
+    .default("en"),
   REDACTION_KEEP_WORDS: z.string().default(""),
   TEACHER_ROLE_TITLES: z.string().default(DEFAULT_TEACHER_ROLE_TITLES),
   MAX_FILE_MB: intIn(1, 500).default(25),

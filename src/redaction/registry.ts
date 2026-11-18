@@ -2,6 +2,7 @@
  * Person registry (spec 6.1/6.2): collects every person seen in API responses (by PersonId),
  * infers roles and produces the display (labels per REDACTION_LANGUAGE, English shown):
  *   self → "Me" · teacher → "Mrs Miller" / "Teacher Miller" · student → "Student-7F3A" · unknown → "Person-7F3A"
+ *   child of a parent account → "Child-7F3A" (experimental parent support)
  */
 import { createHmac } from "node:crypto";
 import type { ApiCourseParticipant, ApiParticipant } from "../api/types";
@@ -9,15 +10,16 @@ import type { PersonNames } from "./freetext";
 import { LABELS, type Labels } from "./labels";
 import type { TeacherDirectory } from "./teachers";
 
-export type Role = "self" | "teacher" | "student" | "unknown";
+export type Role = "self" | "teacher" | "student" | "child" | "unknown";
 export type Person = { display: string; role: Role };
 
 /**
  * How reliable is a role hint?
  * - teacher / student: reliable (RoleInHierarchyTitle, CreatedByTeacher, course profile)
  * - teacher-weak: circumstantial (e.g. author of a bulletin) – only applies if nothing contradicts it
+ * - child: child of the (parent) account from children/v1 – overrides every other hint
  */
-export type RoleHint = "teacher" | "student" | "teacher-weak" | "none";
+export type RoleHint = "teacher" | "student" | "teacher-weak" | "child" | "none";
 
 type PersonRecord = {
   id: number;
@@ -25,6 +27,7 @@ type PersonRecord = {
   teacher: boolean;
   student: boolean;
   weakTeacher: boolean;
+  child: boolean;
 };
 
 export type RegistryOptions = {
@@ -71,7 +74,7 @@ export class PersonRegistry {
     if (typeof id !== "number" || !Number.isFinite(id) || id <= 0) return;
     let rec = this.persons.get(id);
     if (!rec) {
-      rec = { id, names: {}, teacher: false, student: false, weakTeacher: false };
+      rec = { id, names: {}, teacher: false, student: false, weakTeacher: false, child: false };
       this.persons.set(id, rec);
       this._version++;
     }
@@ -86,6 +89,7 @@ export class PersonRegistry {
     if (hint === "teacher") rec.teacher = true;
     if (hint === "student") rec.student = true;
     if (hint === "teacher-weak") rec.weakTeacher = true;
+    if (hint === "child") rec.child = true;
     if (this.role(id) !== before) this._version++;
     if (this.role(id) === "teacher" && rec.names.lastName) this.opts.teachers.ensure(this.teacherKey(id), rec.names.lastName);
   }
@@ -126,6 +130,7 @@ export class PersonRegistry {
     if (typeof id !== "number") return "unknown";
     if (id === this.selfId) return "self";
     const rec = this.persons.get(id);
+    if (rec?.child) return "child";
     if (this.opts.teachers.has(this.teacherKey(id))) return "teacher";
     if (!rec) return "unknown";
     if (rec.teacher) return "teacher";
@@ -149,6 +154,7 @@ export class PersonRegistry {
       return { display: entry?.salutation ? L.teacherWithSalutation(entry.salutation, last) : L.teacher(last), role };
     }
     if (role === "student") return { display: L.student(short), role };
+    if (role === "child") return { display: L.child(short), role };
     return { display: L.person(short), role };
   }
 
@@ -162,6 +168,11 @@ export class PersonRegistry {
 
   private hmac(id: number) {
     return createHmac("sha256", this.opts.secret).update(`${this.opts.baseUrl}|${id}`).digest("hex").toUpperCase();
+  }
+
+  /** Stable pseudonymous key of a person (8 hex chars, no PersonId) – e.g. the childId of a parent account's child. */
+  personKey(id: number) {
+    return this.hmac(id).slice(0, 8);
   }
 
   /** Stable key for teachers.json (8 hex chars, no PersonId). */

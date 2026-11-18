@@ -52,6 +52,32 @@ describe("PersonRegistry", () => {
     expect(r.resolve(undefined).display).toBe("Unbekannt");
   });
 
+  test("display per role (nb, fr)", () => {
+    const nb = registry({ labels: LABELS.nb });
+    nb.setSelf(SELF.PersonId, { firstName: SELF.FirstName });
+    nb.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
+    nb.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Student" });
+    expect(nb.resolve(SELF.PersonId).display).toBe("Jeg");
+    expect(nb.resolve(P_TEACHER.PersonId).display).toBe("Lærer Lindqvist");
+    expect(nb.resolve(P_STUDENT.PersonId).display).toMatch(/^Elev-[0-9A-F]{4}$/);
+    expect(nb.resolve(999).display).toMatch(/^Person-[0-9A-F]{4}$/);
+    expect(nb.resolve(undefined).display).toBe("Ukjent");
+
+    const fr = registry({ labels: LABELS.fr });
+    fr.setSelf(SELF.PersonId, { firstName: SELF.FirstName });
+    fr.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
+    fr.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Student" });
+    expect(fr.resolve(SELF.PersonId).display).toBe("Moi");
+    expect(fr.resolve(P_TEACHER.PersonId).display).toBe("Enseignant Lindqvist");
+    expect(fr.resolve(P_STUDENT.PersonId).display).toMatch(/^Élève-[0-9A-F]{4}$/);
+    expect(fr.resolve(999).display).toMatch(/^Personne-[0-9A-F]{4}$/);
+    expect(fr.resolve(undefined).display).toBe("Inconnu");
+
+    const sv = registry({ redactTeachers: true, labels: LABELS.sv });
+    sv.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
+    expect(sv.resolve(P_TEACHER.PersonId).display).toMatch(/^Lärare-[0-9A-F]{4}$/);
+  });
+
   test("a weak teacher hint loses against a reliable student role", () => {
     const r = registry();
     r.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Student" });
@@ -149,6 +175,21 @@ describe("Redactor + registry", () => {
     const out = red.text("Sabine Lindqvist says: Mrs Lindqvist, Frau Lindqvist, Mia and Sonnenfeld, Jonas!");
     const mia = red.people.resolve(P_STUDENT.PersonId).display;
     expect(out).toBe(`Teacher Lindqvist says: Teacher Lindqvist, Teacher Lindqvist, ${mia} and ${mia}, Me!`);
+  });
+
+  test("Dutch and French labels end to end, incl. local salutations", () => {
+    const nl = new Redactor(registry({ labels: LABELS.nl }));
+    nl.registerSelf(SELF);
+    nl.people.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
+    nl.people.registerParticipant({ ...P_STUDENT, RoleInHierarchyTitle: "Student" });
+    const mia = nl.people.resolve(P_STUDENT.PersonId).display;
+    expect(mia).toMatch(/^Leerling-[0-9A-F]{4}$/);
+    expect(nl.text("Hoi Jonas, Mevrouw Lindqvist en Mia: a@b.example")).toBe(`Hoi Ik, Docent Lindqvist en ${mia}: [e-mail]`);
+
+    const fr = new Redactor(registry({ labels: LABELS.fr }));
+    fr.registerSelf(SELF);
+    fr.people.registerParticipant({ ...P_TEACHER, RoleInHierarchyTitle: "Teacher" });
+    expect(fr.text("Bonjour Jonas, Mme Lindqvist : a@b.example")).toBe("Bonjour Moi, Enseignant Lindqvist : [e-mail]");
   });
 
   test("German labels end to end", () => {

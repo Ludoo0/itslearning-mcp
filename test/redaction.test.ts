@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { detectLoginModeFromHtml } from "../src/auth/loginMode";
 import { NameDictionary, parseKeepWords, redactContacts } from "../src/redaction/freetext";
 import { htmlToText } from "../src/redaction/html";
-import { LABELS } from "../src/redaction/labels";
+import { getLabels, LABELS, LANGUAGES } from "../src/redaction/labels";
 import { Redactor } from "../src/redaction/redactor";
 import { isShareableUrl, sanitizeErrorText, stripSecretUrls } from "../src/redaction/secrets";
 import { SELF } from "./fixtures";
@@ -133,6 +133,19 @@ describe("freetext", () => {
     expect(d.apply("Mr Sonnenfeld")).toBe("Mr Student-1");
   });
 
+  test("nb/sv/nl/fr salutations are replaced for teachers only", () => {
+    const d = new NameDictionary();
+    d.addPerson({ firstName: "Sabine", lastName: "Lindqvist" }, "T", { withTitles: true });
+    d.addPerson({ firstName: "Mia", lastName: "Sonnenfeld" }, "S", {});
+    const variants = ["Fru", "Fröken", "Herr", "Mevrouw", "Mevr.", "Mw.", "Meneer", "Dhr.", "Juf", "Meester"];
+    variants.push("Madame", "Mme", "Mme.", "Mademoiselle", "Mlle", "Monsieur", "M.");
+    for (const sal of variants) {
+      expect(d.apply(`${sal} Lindqvist`)).toBe("T");
+      expect(d.apply(`${sal.toLowerCase()} lindqvist`)).toBe("T");
+    }
+    expect(d.apply("Mevrouw Sonnenfeld, Mme Sonnenfeld")).toBe("Mevrouw S, Mme S");
+  });
+
   test("same spelling for two people → neutral", () => {
     const d = new NameDictionary();
     d.addPerson({ firstName: "Mia", lastName: "Sonnenberg" }, "A");
@@ -177,5 +190,31 @@ describe("loginMode", () => {
     expect(detectLoginModeFromHtml('<li id="ctl00_ContentPlaceHolder1_nativeLogin">')).toBe("native");
     expect(detectLoginModeFromHtml('<div id="ctl00_ContentPlaceHolder1_federatedLogin">')).toBe("federated-only");
     expect(detectLoginModeFromHtml("<html></html>")).toBe("unknown");
+  });
+});
+
+describe("label tables", () => {
+  const enKeys = Object.keys(LABELS.en).sort();
+  test("every language has a table, exactly the keys of en, matching types and bracket placeholders", () => {
+    expect(Object.keys(LABELS).sort()).toEqual([...LANGUAGES].sort());
+    for (const lang of LANGUAGES) {
+      const l = LABELS[lang];
+      expect(getLabels(lang)).toBe(l);
+      expect(l.language).toBe(lang);
+      expect(Object.keys(l).sort()).toEqual(enKeys);
+      for (const k of enKeys) expect(typeof l[k as keyof typeof l]).toBe(typeof LABELS.en[k as keyof typeof LABELS.en]);
+      for (const k of ["ambiguousName", "email", "phone", "itslearningLink", "linkRemoved", "encodedData", "idPair", "image"] as const) {
+        expect(l[k]).toMatch(/^\[[^\]]+\]$/);
+      }
+      expect(l.student("AB12")).toMatch(/-AB12$/);
+      expect(l.person("AB12")).toMatch(/-AB12$/);
+      expect(l.teacherPseudonym("AB12")).toMatch(/-AB12$/);
+      expect(l.teacher("Lindqvist")).toMatch(/ Lindqvist$/);
+      expect(l.teacherWithSalutation("X", "Lindqvist")).toBe("X Lindqvist");
+      expect(l.imageN(3)).toContain("3");
+      expect(l.element(42)).toContain("42");
+      expect(l.group(4, [])).toContain("4");
+      expect(l.group(4, ["T"])).toContain("T");
+    }
   });
 });

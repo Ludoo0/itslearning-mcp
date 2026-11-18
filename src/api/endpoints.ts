@@ -3,13 +3,19 @@ import { ToolError } from "../errors";
 import type { ApiClient } from "./client";
 import type {
   ApiAssignment,
+  ApiCalendarEvent,
+  ApiChild,
+  ApiChildCourse,
   ApiCourse,
+  ApiCourseCalendarEvent,
   ApiCourseCard,
   ApiCourseParticipant,
   ApiElement,
   ApiLightBulletin,
   ApiNotification,
   ApiPerson,
+  ApiPlanInfo,
+  ApiPlanPreview,
   ApiResource,
   ApiResourceList,
   ApiTask,
@@ -45,6 +51,26 @@ export class Itslearning {
 
   courseTasks(courseId: number): Promise<ApiTask[]> {
     return this.all<ApiTask>(`${P}/courses/{courseId}/tasks/v1`, { courseId });
+  }
+
+  // ---------- Parent accounts (EXPERIMENTAL: per the public API help pages, not verified against a real parent account) ----------
+
+  /** Children of a parent account (empty for students). */
+  children(): Promise<ApiChild[]> {
+    return this.all<ApiChild>(`${P}/children/v1`, {}, { ttlS: 900 });
+  }
+
+  childCourses(childId: number): Promise<ApiChildCourse[]> {
+    return this.all<ApiChildCourse>(`${P}/children/{childId}/courses/v1`, { childId }, { ttlS: 900 });
+  }
+
+  /** Per the help page: tasks of the child that are not completed and not hidden. */
+  childTasks(childId: number): Promise<ApiTask[]> {
+    return this.all<ApiTask>(`${P}/children/{childId}/tasks/v1`, { childId });
+  }
+
+  childCourseTasks(childId: number, courseId: number): Promise<ApiTask[]> {
+    return this.all<ApiTask>(`${P}/children/{childId}/courses/{courseId}/tasks/v1`, { childId, courseId });
   }
 
   assignment(elementId: number): Promise<ApiAssignment> {
@@ -122,6 +148,50 @@ export class Itslearning {
   /** Target URL of a task attachment (SECRET). */
   assignmentFileLocation(elementId: number, fileId: number): Promise<string> {
     return this.api.getRedirectLocation(`${P}/assignments/{elementId}/files/{fileId}/v1`, { elementId, fileId });
+  }
+
+  // ---------- Calendar and planner (endpoints answer; response shapes unverified against real data) ----------
+
+  /** Calendar events across all courses from `fromDate` (YYYY-MM-DD) on. `fromDate` is required (400 without it). */
+  calendarEvents(fromDate: string, pageIndex: number, pageSize: number): Promise<Paged<ApiCalendarEvent>> {
+    return this.api.get(`${P}/calendar/events/v1`, {}, { fromDate, PageIndex: pageIndex, PageSize: pageSize });
+  }
+
+  courseCalendarEvents(
+    courseId: number,
+    fromDate: string,
+    toDate: string,
+    pageIndex: number,
+    pageSize: number,
+  ): Promise<Paged<ApiCourseCalendarEvent>> {
+    return this.api.get(
+      `${P}/courses/{courseId}/calendarevents/v1`,
+      { courseId },
+      { fromDate, toDate, PageIndex: pageIndex, PageSize: pageSize },
+    );
+  }
+
+  /**
+   * Plan previews of a course that start or end within the period (UTC, `YYYY-MM-DDTHH:MM:SS`).
+   * 403 is expected for courses whose plans are not visible to the account (seen for student accounts);
+   * the tool reports those as `unavailableCourses`.
+   */
+  async coursePlans(courseId: number, startDate: string, stopDate: string): Promise<ApiPlanPreview[]> {
+    const res = await this.api.get<Paged<ApiPlanPreview>>(
+      `${P}/planner/v1`,
+      {},
+      { courseId, startDate, stopDate },
+      { expectedStatuses: [403] },
+    );
+    return Array.isArray(res?.EntityArray) ? res.EntityArray : [];
+  }
+
+  /** Plan details (topic, learning objectives, attached elements) for the given plan ids. */
+  async plansInfo(planIds: number[]): Promise<ApiPlanInfo[]> {
+    if (!planIds.length) return [];
+    const query = Object.fromEntries(planIds.map((id, i) => [`plansIds[${i}]`, id]));
+    const res = await this.api.get<ApiPlanInfo[]>(`${P}/planner/plansinfo/v1`, {}, query);
+    return Array.isArray(res) ? res : [];
   }
 
   /** Fetches all pages of a paged list (with an upper bound so nothing gets out of hand). */

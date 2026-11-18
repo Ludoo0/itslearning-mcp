@@ -25,8 +25,8 @@ Agent ──MCP──▶ itslearning-mcp ──REST──▶ https://<your-schoo
 
 ## Features
 
-- **10 read-only tools**: overview, courses, tasks (+ details), news, course announcements, message threads (+ messages), course files and file downloads.
-- **Redaction by default**: the account owner becomes `Me`, teachers `Teacher Müller` (or `Mrs Müller`), classmates `Student-7F3A`; names in free text, e-mail addresses, phone numbers, internal links, tokens and encoded data blobs are removed. Labels in English (default) or German.
+- **13 read-only tools**: overview, courses, tasks (+ details), news, course announcements, message threads (+ messages), calendar, weekly/lesson plans, course files, file downloads and (experimental) the children of a parent account.
+- **Redaction by default**: the account owner becomes `Me`, teachers `Teacher Müller` (or `Mrs Müller`), classmates `Student-7F3A`; names in free text, e-mail addresses, phone numbers, internal links, tokens and encoded data blobs are removed. Labels in English (default), German, Norwegian (Bokmål), Swedish, Dutch or French.
 - **File downloads** with text extraction (PDF, DOCX, text) – the extracted text is redacted, too.
 - **Two transports**: stdio for local clients, stateless Streamable HTTP with API key for Docker/remote use.
 - **Gentle on the instance**: caching, rate limiting, retries with backoff, single login with a persisted, rotating refresh token.
@@ -36,7 +36,7 @@ Agent ──MCP──▶ itslearning-mcp ──REST──▶ https://<your-schoo
 ## Requirements
 
 - An itslearning instance with **native login** (user name + password on the itslearning login page). Instances that only offer login via a third-party identity provider (Microsoft, Google, Feide, …) are **not supported** – the server detects this and reports `SSO_NOT_SUPPORTED`.
-- A student account. Parent accounts are not supported yet (see [roadmap](docs/roadmap.md)).
+- A student account. Parent accounts are supported **experimentally** (children, their courses and tasks) – not yet verified against a real parent account (see [roadmap](docs/roadmap.md)).
 - Docker, or [Bun](https://bun.sh) ≥ 1.4 to run it without Docker.
 
 ### Check your instance first
@@ -71,6 +71,11 @@ The output contains only status codes and counts – no names or content – so 
 | `itslearning_get_message_thread` | Messages of a thread in chronological order, attachments as `fileRef` |
 | `itslearning_list_course_files` | Folders and elements of a course (optionally recursive) with `fileRef` |
 | `itslearning_download_file` | Download a file by `fileRef`: redacted text, image, or file content |
+| `itslearning_list_calendar` | Calendar events in a period (default: next 14 days, max. 90), optionally for one course |
+| `itslearning_list_plans` | Weekly/lesson plans from the course planner: topic, description, learning objectives, attached elements (`fileRef`) |
+| `itslearning_list_children` | *Experimental:* children of a parent account as pseudonyms with `childId` |
+
+Calendar and planner are unverified against real data (the reference instance does not use them) and may return empty lists. **Parent accounts (experimental, unverified):** `itslearning_overview`, `itslearning_list_tasks` and `itslearning_list_courses` accept an optional `childId` (default: the only child; ignored for student accounts). `itslearning_get_task` does not support child tasks yet; child courses have no counters/favorites; news and messages in the overview stay the parent's own.
 
 ## Quick start (Docker)
 
@@ -179,7 +184,7 @@ All settings are environment variables. Variables marked *(file)* also accept `<
 | `MCP_PORT` | `3000` | HTTP port |
 | `MCP_API_KEY` *(file)* | required for `http` | Bearer key for clients, ≥ 32 characters |
 | `MCP_ALLOWED_ORIGINS` | empty | Allowed browser origins (comma-separated); other `Origin` headers → 403 |
-| `REDACTION_LANGUAGE` | `en` | Labels and placeholders: `en` or `de` |
+| `REDACTION_LANGUAGE` | `en` | Labels and placeholders: `en`, `de`, `nb` (Norwegian Bokmål), `sv`, `nl` or `fr`; other values → configuration error |
 | `REDACTION_SECRET` *(file)* | generated | HMAC secret for pseudonyms (≥ 16 characters), stored in `DATA_DIR/secret` if not set |
 | `REDACTION_KEEP_WORDS` | empty | Comma-separated words never replaced as a single name (see below) |
 | `REDACT_TEACHERS` | `false` | `true` → pseudonymise teachers too (`Teacher-7F3A`) |
@@ -196,19 +201,20 @@ All settings are environment variables. Variables marked *(file)* also accept `<
 
 How people appear in tool output:
 
-| Who | `REDACTION_LANGUAGE=en` | `REDACTION_LANGUAGE=de` |
-|---|---|---|
-| Account owner | `Me` | `Ich` |
-| Teacher (salutation set) | `Mrs Müller` | `Frau Müller` |
-| Teacher (no salutation) | `Teacher Müller` | `Lehrkraft Müller` |
-| Teacher with `REDACT_TEACHERS=true` | `Teacher-7F3A` | `Lehrkraft-7F3A` |
-| Classmate | `Student-7F3A` | `Schüler:in-7F3A` |
-| Unknown role | `Person-7F3A` | `Person-7F3A` |
+| Who | `en` (default) | `de` | `nb` | `sv` | `nl` | `fr` |
+|---|---|---|---|---|---|---|
+| Account owner | `Me` | `Ich` | `Jeg` | `Jag` | `Ik` | `Moi` |
+| Teacher (salutation set) | `Mrs Müller` | `Frau Müller` | `Fru Müller` | `Fru Müller` | `Mevrouw Müller` | `Madame Müller` |
+| Teacher (no salutation) | `Teacher Müller` | `Lehrkraft Müller` | `Lærer Müller` | `Lärare Müller` | `Docent Müller` | `Enseignant Müller` |
+| Teacher with `REDACT_TEACHERS=true` | `Teacher-7F3A` | `Lehrkraft-7F3A` | `Lærer-7F3A` | `Lärare-7F3A` | `Docent-7F3A` | `Enseignant-7F3A` |
+| Classmate | `Student-7F3A` | `Schüler:in-7F3A` | `Elev-7F3A` | `Elev-7F3A` | `Leerling-7F3A` | `Élève-7F3A` |
+| Child (parent accounts, experimental) | `Child-7F3A` | `Kind-7F3A` | `Barn-7F3A` | `Barn-7F3A` | `Kind-7F3A` | `Enfant-7F3A` |
+| Unknown role | `Person-7F3A` | `Person-7F3A` | `Person-7F3A` | `Person-7F3A` | `Persoon-7F3A` | `Personne-7F3A` |
 
-Placeholders: `[email]`, `[phone]`, `[itslearning link]`, `[link removed]`, `[encoded data removed]`, `[name]` (ambiguous name), `[ID]` (de: `[E-Mail]`, `[Telefon]`, `[itslearning-Link]`, `[Link entfernt]`, `[kodierte Daten entfernt]`, `[Name]`).
+Placeholders (English): `[email]`, `[phone]`, `[itslearning link]`, `[link removed]`, `[encoded data removed]`, `[name]` (ambiguous name), `[ID]` – translated in the other languages (e.g. de `[E-Mail]`, `[Name]`; labels live in `src/redaction/labels.ts`).
 
 How it works:
-- Tools return **allowlisted fields only**, never raw API responses. Person IDs and profile/avatar URLs are never emitted.
+- Tools return **allowlisted fields only**, never raw API responses. Person IDs and profile/avatar URLs are never emitted – the `childId` used to select a child in parent accounts is a pseudonymous 8-character key, not the child's person ID.
 - Pseudonyms are stable (HMAC of the person ID with a local secret), so an agent can tell that two messages come from the same person.
 - Names in free text (tasks, news, messages, thread titles, file names, extracted file text) are replaced using a dictionary of every person the server knows: participants of recent message threads (loaded at startup), course participants (loaded before course content) and every person in API responses.
 - E-mail addresses, phone numbers, itslearning links, tokens, ID pairs and URL-encoded data are removed. External links are kept only if their parameters look harmless.
@@ -221,7 +227,9 @@ Teachers are added automatically to `DATA_DIR/teachers.json` (last name only –
 { "teachers": [ { "id": "A3F2C1D0", "lastName": "Müller", "salutation": "" } ] }
 ```
 
-Set `salutation` (e.g. `"Mrs"`, `"Mr"`, `"Frau"`, `"Herr"`) and the agent sees `Mrs Müller`; leave it empty for `Teacher Müller`. Changes apply without restart. The salutation is never guessed. In Docker: `docker compose exec itslearning-mcp vi /data/teachers.json`.
+Set `salutation` (e.g. `"Mrs"`, `"Mr"`, `"Frau"`, `"Herr"`) and the agent sees `Mrs Müller`; leave it empty for `Teacher Müller`. Changes apply without restart. The salutation is never guessed.
+
+In free text, a teacher's last name is also replaced together with a preceding salutation: `Mr`, `Mrs`, `Ms`, `Miss`, `Dr` (with or without a dot), `Frau`, `Herr`, `Herrn`, `Fr.`, `Hr.`, `Fru`, `Fröken`, `Mevrouw`, `Mevr.`, `Mw.`, `Meneer`, `Dhr.`, `Juf`, `Juffrouw`, `Meester`, `Madame`, `Mme`, `Mademoiselle`, `Mlle`, `Monsieur`, `M.`. In Docker: `docker compose exec itslearning-mcp vi /data/teachers.json`.
 
 ### `REDACTION_KEEP_WORDS`
 
@@ -247,6 +255,8 @@ Tools return `fileRef` values: `e_<id>` course element, `a_<task>_<file>` task a
 | `both` | file + redacted text |
 
 Elements that are not files (links, notes, tests) return `kind: "page"` with the redacted page text.
+
+Course files need several web requests (SSO → web session → `DownloadRedirect`); once the first download has succeeded, later ones call `DownloadRedirect` directly and fall back to the full chain on any failure (unverified against a real instance).
 
 ## Smoke test against your account
 

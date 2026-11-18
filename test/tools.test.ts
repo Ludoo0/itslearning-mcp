@@ -123,10 +123,13 @@ describe("MCP protocol (in-memory)", () => {
       "itslearning_get_message_thread",
       "itslearning_get_task",
       "itslearning_list_bulletins",
+      "itslearning_list_calendar",
+      "itslearning_list_children",
       "itslearning_list_course_files",
       "itslearning_list_courses",
       "itslearning_list_message_threads",
       "itslearning_list_news",
+      "itslearning_list_plans",
       "itslearning_list_tasks",
       "itslearning_overview",
     ]);
