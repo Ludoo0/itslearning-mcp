@@ -171,9 +171,18 @@ export class Itslearning {
     );
   }
 
-  /** Plan previews of a course that start or end within the period (UTC, `YYYY-MM-DDTHH:MM:SS`). */
+  /**
+   * Plan previews of a course that start or end within the period (UTC, `YYYY-MM-DDTHH:MM:SS`).
+   * 403 is expected for courses whose plans are not visible to the account (seen for student accounts);
+   * the tool reports those as `unavailableCourses`.
+   */
   async coursePlans(courseId: number, startDate: string, stopDate: string): Promise<ApiPlanPreview[]> {
-    const res = await this.api.get<Paged<ApiPlanPreview>>(`${P}/planner/v1`, {}, { courseId, startDate, stopDate });
+    const res = await this.api.get<Paged<ApiPlanPreview>>(
+      `${P}/planner/v1`,
+      {},
+      { courseId, startDate, stopDate },
+      { expectedStatuses: [403] },
+    );
     return Array.isArray(res?.EntityArray) ? res.EntityArray : [];
   }
 

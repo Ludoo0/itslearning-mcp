@@ -17,7 +17,7 @@ Sources: the public API help pages at `/restapi/help` plus three probe runs with
 | List course resources | ✅ | `GET /restapi/personal/courses/{courseId}/resources/v1` |
 | Download files | ✅ | Message attachments/images: tokenized `filerepository` URL directly; course files: SSO URL → web session → `DownloadRedirect.ashx` (verified with a PDF) |
 | Calendar | ⚠️ empty | API and iCal feed return 0 events – the reference instance does not use the calendar (tool implemented, unverified with data) |
-| Weekly plans (planner) | ⏳ | `GET /restapi/personal/planner/v1?courseId=…` (tool implemented, unverified with data) |
+| Weekly plans (planner) | ⏳ | `GET /restapi/personal/planner/v1?courseId=…` (tool implemented; at the reference instance a student account gets `403 "User does not have access to plans in course …"` – reported as `unavailableCourses`) |
 | Parent accounts | ⏳ | `GET /restapi/personal/children/v1` + `children/{childId}/…` (experimental, no parent account tested) |
 
 ## General
