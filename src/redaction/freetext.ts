@@ -210,8 +210,14 @@ export class NameDictionary {
     return this.map.size;
   }
 
-  /** Registers all spellings of a person. `display` is the replacement (e.g. "Mrs Miller", "Me"). */
-  addPerson(p: PersonNames, display: string, opts: { withTitles?: boolean } = {}) {
+  /**
+   * Registers all spellings of a person. `display` is the replacement (e.g. "Mrs Miller", "Me").
+   * `withTitles`: also "<salutation> <last name>" (teachers only).
+   * `neutralFirstName`: the first name *alone* becomes the neutral label instead of `display`. For teachers,
+   * whose display contains the real last name, a first name that belongs to someone else ("<first name> <other
+   * last name>", e.g. a public figure in course material) would otherwise reveal the teacher's full name.
+   */
+  addPerson(p: PersonNames, display: string, opts: { withTitles?: boolean; neutralFirstName?: boolean } = {}) {
     const first = clean(p.firstName);
     const last = clean(p.lastName);
     // Compound names ("Ibáñez Olmedo", "Lindqvist-Ødegård", "Anna-Lena") are often signed with one part only
@@ -233,7 +239,11 @@ export class NameDictionary {
     // "Mrs/Frau <last name>" only for teachers – otherwise collisions with students of the same name
     if (opts.withTitles) for (const l of lastVariants) for (const s of SALUTATIONS) multi.push(`${s} ${l}`);
     for (const m of multi) if (m.includes(" ") || m.length >= MIN_SINGLE_NAME_LEN) this.addSingleOrMulti(m, display, m.includes(" "));
-    for (const single of [...firstVariants, ...lastVariants]) {
+    const firstAlone = opts.neutralFirstName ? this.ambiguousLabel : display;
+    for (const single of firstVariants) {
+      if (single.length >= MIN_SINGLE_NAME_LEN) this.addSingleOrMulti(single, firstAlone, false);
+    }
+    for (const single of lastVariants) {
       if (single.length >= MIN_SINGLE_NAME_LEN) this.addSingleOrMulti(single, display, false);
     }
   }

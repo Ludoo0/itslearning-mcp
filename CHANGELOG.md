@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- A teacher's first name on its own was replaced by the teacher's display (`Teacher <last name>`). When the same first name belonged to someone else – e.g. a public figure quoted in course material – the output read `Teacher <last name> <other last name>` and revealed the teacher's full name. A teacher's first name alone now becomes the neutral label (`[name]`); full name, `F. Last`, salutation + last name and the last name alone still map to the teacher. Students and the account owner are unchanged (their display is a pseudonym).
+
 ## [0.3.2] - 2026-11-18
 
 ### Fixed

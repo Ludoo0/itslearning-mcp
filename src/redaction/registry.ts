@@ -159,10 +159,12 @@ export class PersonRegistry {
   }
 
   /** All known people with names + display – the basis of the name dictionary. */
-  dictionaryEntries(): { names: PersonNames; display: string; withTitles: boolean }[] {
+  dictionaryEntries(): { names: PersonNames; display: string; withTitles: boolean; neutralFirstName: boolean }[] {
     return [...this.persons.values()].map((r) => {
       const p = this.resolve(r.id);
-      return { names: r.names, display: p.display, withTitles: p.role === "teacher" };
+      const teacher = p.role === "teacher";
+      // A teacher's display carries the real last name → the first name alone must not map to it
+      return { names: r.names, display: p.display, withTitles: teacher, neutralFirstName: teacher };
     });
   }
 

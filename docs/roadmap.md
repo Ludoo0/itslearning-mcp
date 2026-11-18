@@ -20,6 +20,11 @@ Since v0.2.0, `itslearning_get_task` reads the instructions from the task's web 
 ### Salutation before a student pseudonym
 Observed at the reference instance: a bulletin mentions a person as `<salutation> <last name>` (pattern `Frau Xxxxx`), and the output becomes `Frau Student-XXXX` (de `Frau Schüler:in-XXXX`). The person is registered with the student role, so the salutation stays in front of the pseudonym – not a leak, but a misleading label (a staff member registered as a student, or a student addressed formally). To check: which role the API reports for such people (structure only), whether `teacherRoleTitles` misses a role title, and whether a salutation directly in front of a student/person pseudonym should be absorbed into the replacement (`Frau Lindqvist` → `Student-XXXX`, without `Frau`). Add a regression test with fictional data.
 
+### Names of third parties in course material
+Observed at the reference instance in extracted PDF text (press articles quoted in course material): names of public figures partly match registered people. A teacher's first name revealed the teacher's full name (fixed, see CHANGELOG). Still open, lower severity:
+- A third party's first or last name that matches a **student** becomes `<first name> Student-XXXX` / `Student-XXXX <last name>`. This links a pseudonym to a name part and misattributes the quote. Option: treat a single-part match directly next to a capitalised word that is not part of the same person's name as neutral (`[name]`) – careful with German nouns, which are always capitalised.
+- A **place name** that is also part of a registered account's name (pattern: an organisation-like account) is replaced by `Person-XXXX`. Not a leak; deployments can add the word to `REDACTION_KEEP_WORDS`. To check (structure only): which role/name fields such accounts have, and whether accounts without a first name should register single names at all.
+
 ## Implemented, awaiting verification against real data
 
 Built from the public API help pages and tested with fictional data only. Findings from a real instance (structure/counts only) are welcome.

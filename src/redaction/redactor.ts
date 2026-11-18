@@ -55,7 +55,9 @@ export class Redactor {
   get names(): NameDictionary {
     if (this.dictVersion !== this.people.version) {
       const d = this.newDictionary();
-      for (const e of this.people.dictionaryEntries()) d.addPerson(e.names, e.display, { withTitles: e.withTitles });
+      for (const e of this.people.dictionaryEntries()) {
+        d.addPerson(e.names, e.display, { withTitles: e.withTitles, neutralFirstName: e.neutralFirstName });
+      }
       this.dict = d;
       this.dictVersion = this.people.version;
     }

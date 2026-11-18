@@ -196,6 +196,22 @@ describe("freetext", () => {
     expect(d.apply("Sabine Lindqvist")).toBe("T");
   });
 
+  test("a teacher's first name alone becomes neutral – it must not reveal the teacher's full name", () => {
+    const d = new NameDictionary();
+    d.addPerson({ firstName: "Sabine", lastName: "Lindqvist" }, "Teacher Lindqvist", { withTitles: true, neutralFirstName: true });
+    // A different person with the same first name (e.g. a public figure quoted in course material)
+    const out = d.apply("Association president Sabine Rasmussen said the vote at 16 is premature.");
+    expect(out).toBe("Association president [name] Rasmussen said the vote at 16 is premature.");
+    expect(out).not.toContain("Lindqvist");
+    // Everything that identifies the teacher still maps to the teacher
+    expect(d.apply("Sabine Lindqvist, Frau Lindqvist, S. Lindqvist, Lindqvist")).toBe(
+      "Teacher Lindqvist, Teacher Lindqvist, Teacher Lindqvist, Teacher Lindqvist",
+    );
+    // First names of students keep their pseudonym (it reveals nothing)
+    d.addPerson({ firstName: "Lukas", lastName: "Sonnenberg" }, "Student-7F3A");
+    expect(d.apply("Hi Lukas")).toBe("Hi Student-7F3A");
+  });
+
   test("keep words are never replaced as a single name, full names still are", () => {
     const keep = parseKeepWords(" Bergen, ,OSLO");
     expect([...keep]).toEqual(["bergen", "oslo"]);
@@ -215,6 +231,13 @@ describe("Redactor", () => {
     );
     expect(out).toBe("Hello Me, write to [email]\nhere");
     expect(out).not.toMatch(/Jonas|Beispielmann|itslearning|Token/);
+  });
+
+  test("teacher first names in free text do not reveal the teacher (registry → dictionary)", () => {
+    const r = new Redactor();
+    r.people.register(4711, { firstName: "Sabine", lastName: "Lindqvist", fullName: "Sabine Lindqvist" }, "teacher");
+    const out = r.text("Quote: Sabine Rasmussen thinks otherwise. Signed, Sabine Lindqvist");
+    expect(out).toBe("Quote: [name] Rasmussen thinks otherwise. Signed, Teacher Lindqvist");
   });
 
   test("truncates with an ellipsis", () => {
