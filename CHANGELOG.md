@@ -5,10 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-18
+
 ### Added
 
 - `itslearning_list_calendar`: calendar events in a period (`from`, `days` default 14, max. 90, `limit`), across all courses (`calendar/events/v1`, `fromDate` is required) or for one course (`courseId` → `courses/{id}/calendarevents/v1`); returns `from`, `to`, `total`, `hasMore`. Unverified against real data (the reference instance has no calendar events).
-- `itslearning_list_plans`: weekly/lesson plans from the course planner (`planner/v1`, which requires a `courseId` – without `courseId` all current courses are queried, failing courses are counted in `unavailableCourses`); with `includeDetails` (default `true`) topic, learning objectives and attached elements with `e_` fileRefs via `planner/plansinfo/v1`. Unverified against real data.
+- `itslearning_list_plans`: weekly/lesson plans from the course planner (`planner/v1`, which requires a `courseId` – without `courseId` all current courses are queried, failing courses are counted in `unavailableCourses`); with `includeDetails` (default `true`) topic, learning objectives and attached elements with `e_` fileRefs via `planner/plansinfo/v1`. At the reference instance a student account gets `403` for the planner of every course (reported as `unavailableCourses`, logged at debug level).
 - **Experimental** parent-account support, not verified against a real parent account: new tool `itslearning_list_children` (children as pseudonyms `Child-XXXX`, with a pseudonymous `childId` key – never the person ID); optional `childId` for `itslearning_list_tasks`, `itslearning_list_courses` and `itslearning_overview` (default: the only child; several children → `INVALID_INPUT`; ignored for student accounts). Teachers of the child's courses are registered before redaction. Limitations: `itslearning_get_task` does not support child tasks, child courses have no counters/favorites/former courses, news and messages in the overview stay the parent's own.
 - Redaction labels in Norwegian Bokmål (`nb`), Swedish (`sv`), Dutch (`nl`) and French (`fr`) besides `en`/`de`; unknown `REDACTION_LANGUAGE` values are a configuration error. New person role `child` (`Child-XXXX`, de `Kind-XXXX`, …). Additional teacher salutations recognised in free text: `Fru`, `Fröken`, `Mevrouw`, `Mevr.`, `Mw.`, `Meneer`, `Dhr.`, `Juf`, `Juffrouw`, `Meester`, `Madame`, `Mme`, `Mademoiselle`, `Mlle`, `Monsieur`, `M.`.
 
@@ -68,6 +70,7 @@ First public release.
 - Group message threads without a name get a readable title (`Group (N participants) with Teacher X`) instead of a list of pseudonyms.
 - `total` for message threads and messages is only returned when itslearning reports a meaningful value (the API always reports 0).
 
-[Unreleased]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Ludoo0/itslearning-mcp/releases/tag/v0.1.0
