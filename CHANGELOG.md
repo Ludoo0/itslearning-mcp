@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- Free-text redaction missed names written in a different spelling than the itslearning profile (GHSA-mjg7-6rhp-q6c9): the name dictionary now matches case- **and diacritic-insensitively** (`Ibáñez` = `Ibanez`, `Ødegård` = `Odegard`, decomposed input), also accepts German transliterations (`Müller` = `Mueller`), and registers the **parts of compound names** (`Ibáñez Olmedo`, `Lindqvist-Ødegård`, `Anna-Lena`) as single names, with first name, initial and – for teachers – salutation. Name particles (`von`, `van`, `der`, `de`, …) are never replaced on their own; a part shared by several people becomes the neutral label.
+
 ## [0.3.0] - 2026-11-18
 
 ### Added

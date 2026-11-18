@@ -134,11 +134,87 @@ export type NameDictionaryOptions = {
   keepWords?: ReadonlySet<string>;
 };
 
+/** Name particles that are never replaced on their own when a compound last name is split into parts. */
+const NAME_PARTICLES = new Set([
+  "von",
+  "vom",
+  "zu",
+  "zum",
+  "zur",
+  "van",
+  "der",
+  "den",
+  "de",
+  "del",
+  "della",
+  "des",
+  "di",
+  "da",
+  "das",
+  "dos",
+  "du",
+  "la",
+  "le",
+  "ter",
+  "ten",
+  "af",
+  "av",
+  "y",
+]);
+
 const clean = (s?: string | null) => (s ?? "").replace(/\s+/g, " ").trim();
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** Letters that NFD does not decompose. */
+const SPECIAL_FOLD: Record<string, string> = {
+  ß: "ss",
+  ẞ: "ss",
+  ø: "o",
+  æ: "ae",
+  œ: "oe",
+  ł: "l",
+  đ: "d",
+  ð: "d",
+  þ: "th",
+  ı: "i",
+};
+
+/** Folds one character: lowercase, without diacritics ("É" → "e", "ß" → "ss"); combining marks become "". */
+function foldChar(ch: string): string {
+  const lower = ch.toLowerCase();
+  return SPECIAL_FOLD[lower] ?? lower.normalize("NFD").replace(/\p{M}/gu, "");
+}
+
+/** Case- and diacritic-insensitive form used for matching names. */
+export function foldName(s: string): string {
+  let out = "";
+  for (const ch of s) out += foldChar(ch);
+  return out;
+}
+
+/** German transliteration of umlauts ("Müller" → "Mueller"), applied before folding. */
+const transliterate = (s: string) => s.replace(/[äöüÄÖÜ]/g, (c) => `${foldChar(c)}e`).replace(/[ßẞ]/g, "ss");
+
+/** Folded text plus, for every folded code unit, the range of the original character it came from. */
+function foldWithMap(text: string) {
+  let folded = "";
+  const origStart: number[] = [];
+  const origEnd: number[] = [];
+  let i = 0;
+  for (const ch of text) {
+    const f = foldChar(ch);
+    for (let k = 0; k < f.length; k++) {
+      origStart.push(i);
+      origEnd.push(i + ch.length);
+    }
+    folded += f;
+    i += ch.length;
+  }
+  return { folded, origStart, origEnd };
+}
+
 export class NameDictionary {
-  private map = new Map<string, string>(); // lowercased pattern → replacement
+  private map = new Map<string, string>(); // folded pattern → replacement
   private ambiguousKeys = new Set<string>();
   private regex?: RegExp;
   private ambiguousLabel: string;
@@ -157,20 +233,42 @@ export class NameDictionary {
   addPerson(p: PersonNames, display: string, opts: { withTitles?: boolean } = {}) {
     const first = clean(p.firstName);
     const last = clean(p.lastName);
+    // Compound names ("Ibáñez Olmedo", "Lindqvist-Ødegård", "Anna-Lena") are often signed with one part only
+    const parts = (s: string) => {
+      const tokens = s.split(/[\s-]+/);
+      if (tokens.length < 2) return [];
+      return tokens.filter((x) => x.length >= MIN_SINGLE_NAME_LEN && !NAME_PARTICLES.has(foldName(x)));
+    };
+    const lastVariants = last ? [last, ...parts(last)] : [];
+    const firstVariants = first ? [first, ...parts(first)] : [];
     const multi: string[] = [clean(p.fullName), clean(p.shortName)];
-    if (first && last) multi.push(`${first} ${last}`, `${last}, ${first}`, `${last} ${first}`, `${first[0]}. ${last}`);
+    if (first && last) {
+      multi.push(`${last}, ${first}`, `${last} ${first}`);
+      for (const l of lastVariants) {
+        for (const f of firstVariants) multi.push(`${f} ${l}`);
+        multi.push(`${first[0]}. ${l}`);
+      }
+    }
     // "Mrs/Frau <last name>" only for teachers – otherwise collisions with students of the same name
-    if (last && opts.withTitles) for (const s of SALUTATIONS) multi.push(`${s} ${last}`);
+    if (opts.withTitles) for (const l of lastVariants) for (const s of SALUTATIONS) multi.push(`${s} ${l}`);
     for (const m of multi) if (m.includes(" ") || m.length >= MIN_SINGLE_NAME_LEN) this.addSingleOrMulti(m, display, m.includes(" "));
-    for (const single of [first, last]) {
+    for (const single of [...firstVariants, ...lastVariants]) {
       if (single.length >= MIN_SINGLE_NAME_LEN) this.addSingleOrMulti(single, display, false);
     }
   }
 
   private addSingleOrMulti(pattern: string, replacement: string, multiWord: boolean) {
-    const key = pattern.toLowerCase();
-    if (!multiWord && (STOPWORDS.has(key) || this.keepWords.has(key))) return;
-    this.add(key, replacement);
+    const variants = new Set([foldName(pattern), foldName(transliterate(pattern))]);
+    for (const key of variants) {
+      if (!multiWord && this.isStopword(key)) continue;
+      this.add(key, replacement);
+    }
+  }
+
+  private foldedStopwords?: Set<string>;
+  private isStopword(key: string) {
+    this.foldedStopwords ??= new Set([...STOPWORDS, ...this.keepWords].map(foldName));
+    return this.foldedStopwords.has(key);
   }
 
   private add(key: string, replacement: string) {
@@ -193,9 +291,24 @@ export class NameDictionary {
         .sort((a, b) => b.length - a.length)
         .map((k) => escapeRe(k).replace(/ /g, "\\s+"))
         .join("|")})(?![\\p{L}\\p{N}])`,
-      "giu",
+      "gu",
     );
-    return text.replace(this.regex, (m) => this.map.get(m.toLowerCase().replace(/\s+/g, " ")) ?? this.ambiguousLabel);
+    // Match on the folded text (case/diacritics/transliteration-insensitive), replace in the original
+    const { folded, origStart, origEnd } = foldWithMap(text);
+    let out = "";
+    let pos = 0;
+    for (const m of folded.matchAll(this.regex)) {
+      const start = origStart[m.index];
+      let end = origEnd[m.index + m[0].length - 1];
+      if (start === undefined || end === undefined || start < pos) continue;
+      // swallow combining marks that belong to the last matched letter
+      while (end < text.length && foldChar(String.fromCodePoint(text.codePointAt(end) ?? 0)) === "") {
+        end += (text.codePointAt(end) ?? 0) > 0xffff ? 2 : 1;
+      }
+      out += text.slice(pos, start) + (this.map.get(m[0].replace(/\s+/g, " ")) ?? this.ambiguousLabel);
+      pos = end;
+    }
+    return out + text.slice(pos);
   }
 }
 

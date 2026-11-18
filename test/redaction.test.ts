@@ -158,6 +158,38 @@ describe("freetext", () => {
     expect(de.apply("Sonnenberg")).toBe("[Name]");
   });
 
+  test("spellings without diacritics or with transliteration are replaced (GHSA-mjg7-6rhp-q6c9)", () => {
+    const d = new NameDictionary();
+    d.addPerson({ firstName: "Andrés", lastName: "Ibáñez Olmedo" }, "Teacher Ibáñez Olmedo", { withTitles: true });
+    d.addPerson({ firstName: "Jörg", lastName: "Müßig" }, "Student-1");
+    d.addPerson({ firstName: "Marten", lastName: "Kovac" }, "Student-2");
+    // Sign-off with first name + first part of the surname, without diacritics
+    expect(d.apply("Herzliche Grüße,\nAndres Ibanez")).toBe("Herzliche Grüße,\nTeacher Ibáñez Olmedo");
+    expect(d.apply("ANDRÉS IBÁÑEZ OLMEDO")).toBe("Teacher Ibáñez Olmedo");
+    expect(d.apply("Frau Olmedo / Herr Ibanez")).toBe("Teacher Ibáñez Olmedo / Teacher Ibáñez Olmedo");
+    // German transliteration and plain folding
+    expect(d.apply("Joerg Muessig, Jorg Mussig")).toBe("Student-1, Student-1");
+    // Diacritics in the text, none in the profile
+    expect(d.apply("Mårten Kováč")).toBe("Student-2");
+    // Decomposed input (combining marks) is replaced completely
+    expect(d.apply("Andrés.")).toBe("Teacher Ibáñez Olmedo.");
+    // Surrounding text keeps its own diacritics
+    expect(d.apply("Grüße an Kovac, schön!")).toBe("Grüße an Student-2, schön!");
+  });
+
+  test("parts of compound last names count as names, particles do not", () => {
+    const d = new NameDictionary();
+    d.addPerson({ firstName: "Sabine", lastName: "Lindqvist-Ødegård" }, "T", { withTitles: true });
+    d.addPerson({ firstName: "Pieter", lastName: "van der Velde" }, "S");
+    expect(d.apply("Sabine Odegard, S. Lindqvist, Frau Lindqvist")).toBe("T, T, T");
+    expect(d.apply("Pieter Velde")).toBe("S");
+    expect(d.apply("die Zeit von der Mitte")).toBe("die Zeit von der Mitte");
+    // a part shared by two people becomes neutral
+    d.addPerson({ firstName: "Mia", lastName: "Lindqvist" }, "S2");
+    expect(d.apply("Lindqvist")).toBe("[name]");
+    expect(d.apply("Sabine Lindqvist")).toBe("T");
+  });
+
   test("keep words are never replaced as a single name, full names still are", () => {
     const keep = parseKeepWords(" Bergen, ,OSLO");
     expect([...keep]).toEqual(["bergen", "oslo"]);
