@@ -17,6 +17,9 @@ Done: `5009` is mapped to `kind: "file"` (reference instance: ~92 % of all cours
 ### Task page fallback for polls and choices
 Since v0.2.0, `itslearning_get_task` reads the instructions from the task's web page when the assignment API refuses details. Verified against a real instance with a `CustomActivity` task (clean text, redacted). Still to check: `LearningToolElement`-based tasks that are refused as well (e.g. polls or project selections) – their pages are embedded via iframes and may contain more interface text or form elements.
 
+### Salutation before a student pseudonym
+Observed at the reference instance: a bulletin mentions a person as `<salutation> <last name>` (pattern `Frau Xxxxx`), and the output becomes `Frau Student-XXXX` (de `Frau Schüler:in-XXXX`). The person is registered with the student role, so the salutation stays in front of the pseudonym – not a leak, but a misleading label (a staff member registered as a student, or a student addressed formally). To check: which role the API reports for such people (structure only), whether `teacherRoleTitles` misses a role title, and whether a salutation directly in front of a student/person pseudonym should be absorbed into the replacement (`Frau Lindqvist` → `Student-XXXX`, without `Frau`). Add a regression test with fictional data.
+
 ## Implemented, awaiting verification against real data
 
 Built from the public API help pages and tested with fictional data only. Findings from a real instance (structure/counts only) are welcome.
