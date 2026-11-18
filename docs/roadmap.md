@@ -1,6 +1,6 @@
 # Roadmap
 
-Open items after v0.3.1. Background: [`mcp-server-spec.md`](./mcp-server-spec.md), [`itslearning-api.md`](./itslearning-api.md). What has been released is listed in the [CHANGELOG](../CHANGELOG.md).
+Open items after v0.3.2. Background: [`mcp-server-spec.md`](./mcp-server-spec.md), [`itslearning-api.md`](./itslearning-api.md). What has been released is listed in the [CHANGELOG](../CHANGELOG.md).
 
 > When documenting findings from a real instance, describe patterns only – never names, IDs or course titles.
 

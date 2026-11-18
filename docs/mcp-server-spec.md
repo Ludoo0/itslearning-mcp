@@ -1,6 +1,6 @@
 # itslearning MCP server – specification (v0.1)
 
-As of 2026-11-18 · Status: implemented (v0.3.1)
+As of 2026-11-18 · Status: implemented (v0.3.2)
 Based on: [`itslearning-api.md`](./itslearning-api.md) (verified endpoints, ✅ = tested, ⏳ = still open) · Open items: [`roadmap.md`](./roadmap.md)
 
 ---

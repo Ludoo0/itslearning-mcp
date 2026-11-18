@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-18
+
 ### Fixed
 
 - Regression in 0.3.1: short parts of compound names (e.g. the preposition in `Auf der …`) were registered as names, so ordinary words like `auf` were replaced by a pseudonym in free text. Parts of compound names now need at least 4 letters to be matched on their own; the full name and longer parts are still replaced.
@@ -80,7 +82,8 @@ First public release.
 - Group message threads without a name get a readable title (`Group (N participants) with Teacher X`) instead of a list of pseudonyms.
 - `total` for message threads and messages is only returned when itslearning reports a meaningful value (the API always reports 0).
 
-[Unreleased]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Ludoo0/itslearning-mcp/compare/v0.1.0...v0.2.0
