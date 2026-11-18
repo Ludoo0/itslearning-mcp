@@ -134,33 +134,14 @@ export type NameDictionaryOptions = {
   keepWords?: ReadonlySet<string>;
 };
 
-/** Name particles that are never replaced on their own when a compound last name is split into parts. */
-const NAME_PARTICLES = new Set([
-  "von",
-  "vom",
-  "zu",
-  "zum",
-  "zur",
-  "van",
-  "der",
-  "den",
-  "de",
-  "del",
-  "della",
-  "des",
-  "di",
-  "da",
-  "das",
-  "dos",
-  "du",
-  "la",
-  "le",
-  "ter",
-  "ten",
-  "af",
-  "av",
-  "y",
-]);
+/**
+ * Minimum length of a single part of a compound name ("Auf der Heide" → "Heide", never "Auf").
+ * Short parts are mostly prepositions/articles that also occur as ordinary words.
+ */
+const MIN_NAME_PART_LEN = 4;
+
+/** Name particles of 4+ letters that are never replaced on their own when a compound name is split into parts. */
+const NAME_PARTICLES = new Set(["della", "delle", "dello", "dalla", "degli", "zwischen"]);
 
 const clean = (s?: string | null) => (s ?? "").replace(/\s+/g, " ").trim();
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -237,7 +218,7 @@ export class NameDictionary {
     const parts = (s: string) => {
       const tokens = s.split(/[\s-]+/);
       if (tokens.length < 2) return [];
-      return tokens.filter((x) => x.length >= MIN_SINGLE_NAME_LEN && !NAME_PARTICLES.has(foldName(x)));
+      return tokens.filter((x) => x.length >= MIN_NAME_PART_LEN && !NAME_PARTICLES.has(foldName(x)));
     };
     const lastVariants = last ? [last, ...parts(last)] : [];
     const firstVariants = first ? [first, ...parts(first)] : [];

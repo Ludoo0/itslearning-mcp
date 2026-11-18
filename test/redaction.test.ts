@@ -184,6 +184,12 @@ describe("freetext", () => {
     expect(d.apply("Sabine Odegard, S. Lindqvist, Frau Lindqvist")).toBe("T, T, T");
     expect(d.apply("Pieter Velde")).toBe("S");
     expect(d.apply("die Zeit von der Mitte")).toBe("die Zeit von der Mitte");
+    // Short parts and prepositions of compound names are never replaced on their own
+    d.addPerson({ firstName: "Lena", lastName: "Auf der Heidbrede" }, "S3");
+    d.addPerson({ firstName: "Tomás", lastName: "Paz Ruiz" }, "S4");
+    expect(d.apply("Ich freue mich auf euch, Lena Heidbrede")).toBe("Ich freue mich auf euch, S3");
+    expect(d.apply("Auf Wiedersehen, Frieden und Paz")).toBe("Auf Wiedersehen, Frieden und Paz");
+    expect(d.apply("Tomas Ruiz")).toBe("S4");
     // a part shared by two people becomes neutral
     d.addPerson({ firstName: "Mia", lastName: "Lindqvist" }, "S2");
     expect(d.apply("Lindqvist")).toBe("[name]");

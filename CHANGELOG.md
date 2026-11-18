@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Regression in 0.3.1: short parts of compound names (e.g. the preposition in `Auf der …`) were registered as names, so ordinary words like `auf` were replaced by a pseudonym in free text. Parts of compound names now need at least 4 letters to be matched on their own; the full name and longer parts are still replaced.
+
 ## [0.3.1] - 2026-11-18
 
 ### Security
