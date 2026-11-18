@@ -5,13 +5,18 @@
 import { Limiter } from "../src/api/limiter";
 import type {
   ApiAssignment,
+  ApiCalendarEvent,
+  ApiChildCourse,
   ApiCourse,
+  ApiCourseCalendarEvent,
   ApiElement,
   ApiLightBulletin,
   ApiMessage,
   ApiNotification,
   ApiParticipant,
   ApiPerson,
+  ApiPlanInfo,
+  ApiPlanPreview,
   ApiResource,
   ApiTask,
   ApiThread,
@@ -26,7 +31,7 @@ import { Redactor } from "../src/redaction/redactor";
 import { PersonRegistry } from "../src/redaction/registry";
 import { TeacherDirectory } from "../src/redaction/teachers";
 import { WebBrowser } from "../src/websession/browser";
-import { createFakeWeb, type FakeWeb } from "./fakeWeb";
+import { createFakeWeb, type FakeWeb, LEARNING_OBJECTS } from "./fakeWeb";
 
 // ---------- People (all fictional) ----------
 // 1001 Jonas Beispielmann – the account owner
@@ -379,22 +384,232 @@ export const RESOURCES: Record<number, ApiResource> = {
     CourseId: 11,
     ContentUrl: VIEW(7201),
     Homework: true,
+    LearningObjectId: LEARNING_OBJECTS[7201]!.lo,
+    LearningObjectInstanceId: LEARNING_OBJECTS[7201]!.loi,
   },
-  7202: { ElementId: 7202, Title: "Note", ElementType: "LearningToolElement", LearningToolId: 5010, CourseId: 11, ContentUrl: VIEW(7202) },
+  7202: {
+    ElementId: 7202,
+    Title: "Note",
+    ElementType: "LearningToolElement",
+    LearningToolId: 5010,
+    CourseId: 11,
+    ContentUrl: VIEW(7202),
+    LearningObjectId: LEARNING_OBJECTS[7202]!.lo,
+    LearningObjectInstanceId: LEARNING_OBJECTS[7202]!.loi,
+  },
   7203: {
     ElementId: 7203,
     Title: "Solutions",
     ElementType: "LearningToolElement",
     CourseId: 11,
-    ContentUrl: VIEW(7201),
+    ContentUrl: VIEW(7203),
     Path: "Worksheets/Solutions",
+    LearningObjectId: LEARNING_OBJECTS[7203]!.lo,
+    LearningObjectInstanceId: LEARNING_OBJECTS[7203]!.loi,
   },
   7101: { ElementId: 7101, Title: "Reading list", ElementType: "LearningToolElement", CourseId: 12, ContentUrl: VIEW(7201) },
 };
 
+// ---------- Parent account (experimental parent support; all fictional) ----------
+// 1501 Petra Beispielmann – parent account owner
+// 5001 Lena Beispielmann  – child
+// 5002 Felix Beispielmann – second child (only in the two-children variant)
+// 2101 Ingrid Haldorsen   – teacher of a child's course (ChildCourse.Teachers)
+export const P_CHILD = { PersonId: 5001, FirstName: "Lena", LastName: "Beispielmann", FullName: "Lena Beispielmann" };
+export const P_CHILD2 = { PersonId: 5002, FirstName: "Felix", LastName: "Beispielmann", FullName: "Felix Beispielmann" };
+export const P_CHILD_TEACHER = { PersonId: 2101, FirstName: "Ingrid", LastName: "Haldorsen", FullName: "Ingrid Haldorsen" };
+
+/** Names that must never appear in parent-account output (teacher last names are allowed). */
+export const PARENT_FORBIDDEN_NAMES = ["Petra", "Lena", "Felix", "Beispielmann", "Ingrid"];
+
+export const PARENT: ApiPerson = {
+  PersonId: 1501,
+  FirstName: "Petra",
+  LastName: "Beispielmann",
+  FullName: "Petra Beispielmann",
+  CanAccessCourses: false,
+  Children: [P_CHILD],
+};
+
+export const CHILD_COURSES: Record<number, ApiChildCourse[]> = {
+  5001: [
+    { CourseId: 21, Title: "Music 5a", CourseCode: "", FriendlyName: "Music", Teachers: [P_CHILD_TEACHER] },
+    { CourseId: 22, Title: "Art 5a", CourseCode: "" },
+  ],
+  5002: [{ CourseId: 31, Title: "Sports 3c", CourseCode: "" }],
+};
+
+export const CHILD_TASKS: Record<number, ApiTask[]> = {
+  5001: [
+    {
+      TaskId: 901,
+      ElementId: 7901,
+      Title: "Recorder practice",
+      Description: "Lena Beispielmann, please practice with Ingrid Haldorsen's sheet. Lena: bring the recorder.",
+      LocationTitle: "Music 5a",
+      LocationType: "Course",
+      LocationId: 21,
+      Status: "NotStarted",
+      Deadline: "2026-11-19T07:00:00Z",
+      ElementType: "LearningToolElement",
+      Homework: true,
+    },
+    {
+      TaskId: 902,
+      ElementId: 7902,
+      Title: "Drawing",
+      LocationTitle: "Art 5a",
+      LocationType: "Course",
+      LocationId: 22,
+      Status: "NotStarted",
+      Deadline: "2026-11-14T07:00:00Z",
+      ElementType: "CustomActivity",
+    },
+  ],
+  5002: [
+    {
+      TaskId: 911,
+      ElementId: 7911,
+      Title: "Running shoes",
+      LocationTitle: "Sports 3c",
+      LocationType: "Course",
+      LocationId: 31,
+      Status: "NotStarted",
+      Deadline: "2026-11-20T07:00:00Z",
+      ElementType: "CustomActivity",
+    },
+  ],
+};
+
+// ---------- Calendar and planner (shapes per API help pages; all content fictional) ----------
+
+export const CALENDAR: ApiCalendarEvent[] = [
+  {
+    EventId: 9102,
+    FromDate: "2026-11-20T14:00:00Z",
+    ToDate: "2026-11-20T15:00:00Z",
+    EventTitle: "Study group",
+    Description: "",
+    ImportDescription: "Meeting with Mia Sonnenfeld",
+    EventType: "Personal",
+    LocationId: 1001,
+    LocationTitle: "",
+  },
+  {
+    EventId: 9101,
+    FromDate: "2026-11-17T08:00:00Z",
+    ToDate: "2026-11-17T09:30:00Z",
+    EventTitle: "Test: fractions",
+    Description:
+      "<p>Bring a calculator, Jonas. Questions to Sabine Lindqvist (lindqvist@school.example), " +
+      'see <a href="https://demo.itslearning.com/main.aspx?CourseID=11">course</a></p>',
+    EventType: "Course",
+    LocationId: 11,
+    LocationTitle: "Math 8b",
+  },
+  {
+    // Outside the default period (14 days from NOW)
+    EventId: 9103,
+    FromDate: "2026-12-20T08:00:00Z",
+    ToDate: "2026-12-20T09:00:00Z",
+    EventTitle: "Christmas concert",
+    EventType: "Course",
+    LocationId: 12,
+    LocationTitle: "English 8b",
+  },
+];
+
+export const COURSE_CALENDAR: Record<number, ApiCourseCalendarEvent[]> = {
+  11: [
+    {
+      Id: 9101,
+      FromDate: "2026-11-17T08:00:00Z",
+      ToDate: "2026-11-17T09:30:00Z",
+      EventTitle: "Test: fractions",
+      Description: "<p>Bring a calculator.</p>",
+      CourseId: 11,
+      LocationTitle: "Math 8b",
+    },
+  ],
+};
+
+export const PLANS: Record<number, ApiPlanPreview[]> = {
+  11: [
+    {
+      PlanId: 9202,
+      TopicId: 33,
+      Order: 2,
+      LocationId: 11,
+      LocationType: "Course",
+      LocationTitle: "Math 8b",
+      PlanName: "Week 3: decimals",
+      Start: "2027-01-11T00:00:00Z",
+      Stop: "2027-01-15T00:00:00Z",
+    },
+    {
+      PlanId: 9201,
+      TopicId: 33,
+      Order: 1,
+      LocationId: 11,
+      LocationType: "Course",
+      LocationTitle: "Math 8b",
+      PlanName: "Week 47: fractions",
+      PlanDescription: "<p>Work with Mia Sonnenfeld on page 12. Contact: math.teacher@school.example</p>",
+      Start: "2026-11-16T00:00:00Z",
+      Stop: "2026-11-20T00:00:00Z",
+      ClassHours: 4,
+    },
+  ],
+  12: [
+    {
+      PlanId: 9203,
+      LocationId: 12,
+      LocationType: "Course",
+      LocationTitle: "English 8b",
+      PlanName: "Reading project",
+      Start: null,
+      Stop: null,
+    },
+  ],
+};
+
+/** Overrides that turn the fake API into a parent account with the given children. */
+export function parentOverrides(children: { PersonId: number }[] = [P_CHILD]): Partial<ItslearningApi> {
+  const list = children.map((c) => [P_CHILD, P_CHILD2].find((x) => x.PersonId === c.PersonId) ?? c);
+  return {
+    person: async () => ({ ...PARENT, Children: list }),
+    children: async () => list.map((c) => ({ ...c, School: "Fictional School" })),
+    // a parent account has no own courses/tasks
+    courses: async () => [],
+    tasks: async () => [],
+    messageThreads: async () => ({ Threads: paged([], 0, 50), HasMore: false }),
+  };
+}
+export const PLANS_INFO: ApiPlanInfo[] = [
+  {
+    PlanId: 9201,
+    CourseId: 11,
+    CourseName: "Math 8b",
+    PlanTopicName: "Fractions",
+    PlanTitle: "Week 47: fractions",
+    LearningObjectives: [{ Id: 1, Title: "Add fractions", Description: "" }],
+    Elements: [
+      { Id: 7201, Title: "Worksheet week 1", Type: "LearningToolElement", IsMarkedAsHomework: true },
+      { Id: 7300, Title: "Worksheets", Type: "Folder", IsMarkedAsHomework: false },
+    ],
+    // Not modeled, must never be passed through
+    ...({ CoursePlannerUrl: "https://demo.itslearning.com/Planner/Planner.aspx?CourseId=11&Token=PLANSECRET" } as object),
+  },
+];
+
 export function fakeApi(overrides: Partial<ItslearningApi> = {}): ItslearningApi {
   return {
     person: async () => SELF,
+    // Child endpoints (only called for parent accounts, see parentOverrides)
+    children: async () => [],
+    childCourses: async (childId) => CHILD_COURSES[childId] ?? [],
+    childTasks: async (childId) => CHILD_TASKS[childId] ?? [],
+    childCourseTasks: async (childId, courseId) => (CHILD_TASKS[childId] ?? []).filter((t) => t.LocationId === courseId),
     courses: async (includeInactive) => (includeInactive ? COURSES_V2 : COURSES_V1),
     starredCourseIds: async () => new Set([12]),
     tasks: async () => TASKS,
@@ -441,6 +656,10 @@ export function fakeApi(overrides: Partial<ItslearningApi> = {}): ItslearningApi
       if (elementId === 7001 && fileId === 1) return "https://filerepository.itslearning.com/asg1?Token=ASGSECRET";
       throw new ToolError("NOT_FOUND", "Element not found.", 404);
     },
+    calendarEvents: async (_fromDate, i, s) => paged(CALENDAR, i, s),
+    courseCalendarEvents: async (courseId, _from, _to, i, s) => paged(COURSE_CALENDAR[courseId] ?? [], i, s),
+    coursePlans: async (courseId) => PLANS[courseId] ?? [],
+    plansInfo: async (ids) => PLANS_INFO.filter((p) => ids.includes(p.PlanId)),
     ...overrides,
   };
 }

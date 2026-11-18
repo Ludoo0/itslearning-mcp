@@ -59,7 +59,7 @@ describe("HTTP transport", () => {
   test("MCP client: list and call tools", async () => {
     const c = await client();
     const { tools } = await c.listTools();
-    expect(tools).toHaveLength(10);
+    expect(tools).toHaveLength(13);
     const res = await c.callTool({ name: "itslearning_list_tasks", arguments: { limit: 2 } });
     expect(res.isError).toBeFalsy();
     expect((res.structuredContent as { total: number }).total).toBe(5);

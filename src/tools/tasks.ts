@@ -6,6 +6,7 @@ import { ToolError } from "../errors";
 import { canExtractText, extractText } from "../files/extract";
 import { type FileRefDto, formatRef } from "../files/refs";
 import { log } from "../log";
+import { childCourses, childIdInput, resolveChildId } from "./children";
 import { redactFileName } from "./files";
 import { warmCourses } from "./people";
 import { handler, ok } from "./result";
@@ -43,9 +44,13 @@ export const deadlineMs = (d?: string | null) => {
   return Number.isFinite(ms) ? ms : undefined;
 };
 
-/** Ids of the account's current courses (courses/v1). Tasks without a course are not affected by filters on this. */
-export async function activeCourseIds(ctx: AppContext): Promise<Set<number>> {
-  return new Set((await ctx.it.courses(false)).map((c) => c.CourseId));
+/**
+ * Ids of the account's current courses (courses/v1) – or, with a childId (parent accounts, experimental),
+ * the child's courses. Tasks without a course are not affected by filters on this.
+ */
+export async function activeCourseIds(ctx: AppContext, childId?: number): Promise<Set<number>> {
+  const courses = childId !== undefined ? await childCourses(ctx, childId) : await ctx.it.courses(false);
+  return new Set(courses.map((c) => c.CourseId));
 }
 
 export function toTaskDto(ctx: AppContext, t: ApiTask): TaskDto {
@@ -77,6 +82,7 @@ export const listTasksInput = {
   activeCoursesOnly: z.boolean().default(false).describe("Only tasks from current courses (hides leftovers from previous school years)"),
   limit: z.number().int().min(1).max(100).default(20),
   offset: z.number().int().min(0).default(0),
+  childId: childIdInput,
 };
 type ListTasksArgs = {
   courseId?: number;
@@ -86,19 +92,28 @@ type ListTasksArgs = {
   activeCoursesOnly?: boolean;
   limit?: number;
   offset?: number;
+  childId?: string;
 };
+
+/** Raw tasks of the account – or of a child (parent accounts, experimental: child endpoints unverified). */
+async function rawTasks(ctx: AppContext, courseId: number | undefined, childId: number | undefined) {
+  if (childId !== undefined) return courseId ? await ctx.it.childCourseTasks(childId, courseId) : await ctx.it.childTasks(childId);
+  return courseId ? await ctx.it.courseTasks(courseId) : await ctx.it.tasks();
+}
 
 export async function listTasks(ctx: AppContext, args: ListTasksArgs) {
   const limit = args.limit ?? 20;
   const offset = args.offset ?? 0;
-  const raw = args.courseId ? await ctx.it.courseTasks(args.courseId) : await ctx.it.tasks();
+  // Parent accounts: children are registered here, before any task text is redacted
+  const childId = await resolveChildId(ctx, args.childId);
+  const raw = await rawTasks(ctx, args.courseId, childId);
   const nowMs = ctx.now().getTime();
 
   let tasks = raw;
   if ((args.status ?? "open") === "open") tasks = tasks.filter(isOpen);
   if (args.homeworkOnly) tasks = tasks.filter((t) => t.Homework);
   if (args.activeCoursesOnly) {
-    const active = await activeCourseIds(ctx);
+    const active = await activeCourseIds(ctx, childId);
     tasks = tasks.filter((t) => {
       const c = courseIdOf(t);
       return c === undefined || active.has(c);
@@ -115,6 +130,9 @@ export async function listTasks(ctx: AppContext, args: ListTasksArgs) {
 
   const pageRaw = tasks.slice(offset, offset + limit);
   await warmCourses(ctx, pageRaw.map(courseIdOf));
+  // Child tasks: the child's course list names the teachers (course participants may not be readable for parents)
+  if (childId !== undefined)
+    await childCourses(ctx, childId).catch(() => log.warn("Child courses not available – redaction relies on names already known"));
   const page = pageRaw.map((t) => toTaskDto(ctx, t));
   return { tasks: page, total: tasks.length, hasMore: offset + page.length < tasks.length };
 }
@@ -220,7 +238,7 @@ export function registerTaskTools(server: McpServer, ctx: AppContext) {
     {
       title: "List tasks",
       description:
-        "Lists tasks/homework sorted by deadline (earliest first). Default: only open tasks, including overdue ones. Person names in texts are redacted.",
+        "Lists tasks/homework sorted by deadline (earliest first). Default: only open tasks, including overdue ones. Person names in texts are redacted. Parent accounts (EXPERIMENTAL, unverified): tasks of the child given by childId (default: the only child); itslearning_get_task does not support child tasks yet.",
       inputSchema: listTasksInput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },

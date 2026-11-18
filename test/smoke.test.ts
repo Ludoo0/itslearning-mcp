@@ -22,7 +22,7 @@ describe("smoke test (logic, against fake data)", () => {
     const res = await smoke(await fakeContext());
     expect(res.leaks).toBe(0);
     const tools = new Set(res.runs.map((r) => r.tool.split(" ")[0]));
-    expect(tools.size).toBe(10);
+    expect(tools.size).toBe(13);
     expect(Object.values(res.participantsStatus).join(" ")).toContain("available");
     // the smoke test's own output contains no names
     expect(res.output).not.toMatch(/Jonas|Beispielmann|Sabine|Mia|Sonnenfeld|Lindqvist/);

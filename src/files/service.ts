@@ -1,6 +1,8 @@
 /**
  * File downloads (spec 5.10, docs/itslearning-api.md → "Downloading files"):
  *   element      → courses/resources/{id}/v1 → sso/url/v1 → web session → (iframes) → DownloadRedirect → file
+ *                  shortcut once the web session reached the resource server: DownloadRedirect with the
+ *                  LearningObjectId/LearningObjectInstanceId from the resources API → file (full chain as fallback)
  *   assignment   → assignments/{id}/files/{fileId}/v1 (302) → file
  *   message      → AttachmentUrl (tokenized filerepository URL) → file
  *   bulletinImage→ OriginalFileUrl (tokenized) → file
@@ -17,6 +19,7 @@ import {
   extractLinks,
   filenameFromDisposition,
   isFileResponse,
+  isItslHost,
   looksLikeLoginPage,
   readLimited,
   type WebBrowser,
@@ -34,10 +37,21 @@ export type DownloadResult =
 
 const MAX_FRAME_DEPTH = 3;
 const MAX_REMEMBERED = 2_000;
+/** After this many consecutive shortcut failures the shortcut is no longer tried (saves a wasted request each time). */
+const MAX_SHORTCUT_FAILURES = 3;
+const DOWNLOAD_REDIRECT_PATH = "/Proxy/DownloadRedirect.ashx";
+
+const isPositiveId = (n: number | null | undefined): n is number => typeof n === "number" && Number.isInteger(n) && n > 0;
 
 export class FileService {
   private urls = new Map<string, string>();
   private jar = new CookieJar();
+  /**
+   * Origin of the resource server (e.g. "https://resource.itslearning.com"), learned from a DownloadRedirect link
+   * that yielded a file in the current web session. Set → the DownloadRedirect shortcut may be tried.
+   */
+  private downloadOrigin: string | undefined;
+  private shortcutFailures = 0;
   private labels: Labels;
 
   constructor(
@@ -115,7 +129,43 @@ export class FileService {
     const target = detail.ContentUrl || detail.Url;
     if (!target) throw new ToolError("NOT_A_FILE", "This element has no content.");
     const title = detail.Title?.trim() || `Element-${elementId}`;
-    return this.viaWebSession(ref, target, title);
+    const fast = await this.tryDownloadShortcut(ref, detail.LearningObjectId, detail.LearningObjectInstanceId, title);
+    return fast ?? this.viaWebSession(ref, target, title);
+  }
+
+  /**
+   * Shortcut for course files: once the web session has followed a DownloadRedirect link successfully, call
+   * DownloadRedirect directly with the ids from the resources API (≈3 instead of ≈8 requests). Only a file counts as
+   * success; anything else (non-ok, HTML, login page, exception) returns undefined → the caller takes the full chain,
+   * so the result never differs from the full chain – only the number of requests does.
+   */
+  private async tryDownloadShortcut(
+    ref: string,
+    learningObjectId: number | null | undefined,
+    instanceId: number | null | undefined,
+    title: string,
+  ): Promise<DownloadResult | undefined> {
+    const origin = this.downloadOrigin;
+    if (!origin || !isPositiveId(learningObjectId) || !isPositiveId(instanceId)) return undefined;
+    if (this.shortcutFailures >= MAX_SHORTCUT_FAILURES) return undefined;
+    const url = `${origin}${DOWNLOAD_REDIRECT_PATH}?LearningObjectId=${learningObjectId}&LearningObjectInstanceId=${instanceId}`;
+    let reason: string;
+    try {
+      const br = await this.browser.get(url, this.jar);
+      if (br.res.ok && isFileResponse(br.res)) {
+        const result = await this.toFile(ref, br, title);
+        this.shortcutFailures = 0;
+        return result;
+      }
+      reason = br.res.ok ? "no file" : `status ${br.res.status}`;
+      await br.res.body?.cancel().catch(() => {});
+    } catch (e) {
+      reason = e instanceof ToolError ? e.code : "exception";
+    }
+    this.shortcutFailures++;
+    // never log the URL (ids + session context); status/reason only
+    log.debug("Download shortcut failed – using the full web chain", { reason });
+    return undefined;
   }
 
   /**
@@ -129,7 +179,10 @@ export class FileService {
 
   private async viaWebSession(ref: string, target: string, title: string): Promise<DownloadResult> {
     for (let attempt = 0; attempt < 2; attempt++) {
-      if (attempt > 0) this.jar = new CookieJar();
+      if (attempt > 0) {
+        this.jar = new CookieJar();
+        this.downloadOrigin = undefined;
+      }
       const sso = await this.api.ssoUrl(target);
       const result = await this.follow(ref, await this.browser.get(sso, this.jar), title, 0);
       if (result !== "login") return result;
@@ -153,13 +206,25 @@ export class FileService {
 
     for (const dl of links.downloads.slice(0, 2)) {
       const next = await this.browser.get(dl, this.jar);
-      if (next.res.ok && isFileResponse(next.res)) return this.toFile(ref, next, title);
+      if (next.res.ok && isFileResponse(next.res)) {
+        this.learnDownloadOrigin(dl);
+        return this.toFile(ref, next, title);
+      }
       await next.res.body?.cancel().catch(() => {});
     }
     if (links.iframes[0] && depth < MAX_FRAME_DEPTH) {
       return this.follow(ref, await this.browser.get(links.iframes[0], this.jar), title, depth + 1);
     }
     return { type: "page", ref, title, html };
+  }
+
+  /** Remembers the resource server origin of a DownloadRedirect link that yielded a file (enables the shortcut). */
+  private learnDownloadOrigin(link: string) {
+    try {
+      const u = new URL(link);
+      if (u.protocol !== "https:" || !isItslHost(link) || u.pathname.toLowerCase() !== DOWNLOAD_REDIRECT_PATH.toLowerCase()) return;
+      this.downloadOrigin = u.origin;
+    } catch {}
   }
 
   private async findMessageAttachment(threadId: number, messageId: number): Promise<string> {

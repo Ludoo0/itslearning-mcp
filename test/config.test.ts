@@ -20,7 +20,16 @@ describe("config", () => {
     const c = loadConfig({ ...base, REDACTION_LANGUAGE: "de", REDACTION_KEEP_WORDS: " Oslo , Bergen ,," });
     expect(c.redactionLanguage).toBe("de");
     expect(c.redactionKeepWords).toEqual(["oslo", "bergen"]);
-    expect(() => loadConfig({ ...base, REDACTION_LANGUAGE: "fr" })).toThrow(ConfigError);
+    expect(() => loadConfig({ ...base, REDACTION_LANGUAGE: "es" })).toThrow(ConfigError);
+  });
+
+  test("REDACTION_LANGUAGE accepts all supported codes and rejects others with a clear message", () => {
+    for (const lang of ["en", "de", "nb", "sv", "nl", "fr"]) {
+      expect(loadConfig({ ...base, REDACTION_LANGUAGE: lang }).redactionLanguage).toBe(lang as never);
+    }
+    for (const bad of ["no", "se", "EN", "de-DE", "xx"]) {
+      expect(() => loadConfig({ ...base, REDACTION_LANGUAGE: bad })).toThrow("REDACTION_LANGUAGE must be one of en, de, nb, sv, nl, fr");
+    }
   });
 
   test("missing required fields → ConfigError listing all problems", () => {

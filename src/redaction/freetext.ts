@@ -75,8 +75,48 @@ export const STOPWORDS = new Set([
   "student",
 ]);
 
-/** Salutations used in front of teacher last names (German and English). */
-const SALUTATIONS = ["Frau", "Herr", "Herrn", "Fr.", "Hr.", "Mr", "Mr.", "Mrs", "Mrs.", "Ms", "Ms.", "Miss", "Dr", "Dr."];
+/**
+ * Salutations used in front of teacher last names (en, de, nb/sv, nl, fr).
+ * Only ever combined with a teacher's last name – never matched on their own.
+ */
+const SALUTATIONS = [
+  // English
+  "Mr",
+  "Mr.",
+  "Mrs",
+  "Mrs.",
+  "Ms",
+  "Ms.",
+  "Miss",
+  "Dr",
+  "Dr.",
+  // German ("Herr" is also Norwegian/Swedish)
+  "Frau",
+  "Herr",
+  "Herrn",
+  "Fr.",
+  "Hr.",
+  // Norwegian / Swedish
+  "Fru",
+  "Fröken",
+  // Dutch
+  "Mevrouw",
+  "Mevr.",
+  "Mw.",
+  "Meneer",
+  "Dhr.",
+  "Juf",
+  "Juffrouw",
+  "Meester",
+  // French
+  "Madame",
+  "Mme",
+  "Mme.",
+  "Mademoiselle",
+  "Mlle",
+  "Monsieur",
+  "M.",
+];
 
 const MIN_SINGLE_NAME_LEN = 3;
 

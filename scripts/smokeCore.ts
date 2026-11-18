@@ -17,7 +17,7 @@ export type SmokeResult = {
 
 /** Display words the server inserts itself (all label languages) – never sensitive, kept readable in structures. */
 const DISPLAY_WORDS =
-  /^(Me|Teacher|Student|Person|Unknown|Mr|Mrs|Ms|Miss|Dr|name|Ich|Lehrkraft|Schüler:in|Frau|Herr|Herrn|Name|Unbekannt)$/;
+  /^(Me|Teacher|Student|Child|Person|Unknown|Mr|Mrs|Ms|Miss|Dr|name|Ich|Lehrkraft|Schüler:in|Kind|Frau|Herr|Herrn|Name|Unbekannt|Jeg|Lærer|Elev|Barn|Ukjent|navn|Jag|Lärare|Okänd|namn|Fru|Fröken|Ik|Docent|Leerling|Persoon|Onbekend|naam|Mevrouw|Mevr|Mw|Meneer|Dhr|Juf|Juffrouw|Meester|Moi|Enseignant|Élève|Enfant|Personne|Inconnu|nom|Madame|Mme|Mademoiselle|Mlle|Monsieur|M)$/;
 
 export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptions): Promise<SmokeResult> {
   const out = opts.out ?? ((l: string) => console.log(l));
@@ -60,6 +60,8 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     out("\nLogin failed – aborting.");
     return { leaks: -1, runs, participantsStatus: {} };
   }
+  // Parent accounts (experimental): empty list for students
+  await call("itslearning_list_children");
   const courses = arr((await call("itslearning_list_courses"))?.courses);
   const tasks = arr((await call("itslearning_list_tasks", { status: "all", limit: 50 }))?.tasks);
   // Task details: the first task plus a few others, preferring activities (their text comes from the task's web page)
@@ -85,6 +87,10 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
   const threadMsgs: Obj[] = [];
   for (const t of threads.slice(0, 3))
     threadMsgs.push(...arr((await call("itslearning_get_message_thread", { threadId: t.threadId, limit: 30 }))?.messages));
+
+  // Calendar and planner (empty if the school does not use these features)
+  await call("itslearning_list_calendar", { days: 30 });
+  await call("itslearning_list_plans", { days: 30 });
 
   // Find a course with files (try at most 4 courses)
   let courseFiles: Obj[] = [];
@@ -121,6 +127,10 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
 
   const me = await ctx.it.person();
   add(me.PersonId, { first: me.FirstName ?? undefined, last: me.LastName ?? undefined, full: me.FullName ?? undefined });
+  // Children of a parent account (experimental; empty for students – no request then)
+  if (me.Children?.length)
+    for (const c of await ctx.it.children().catch(() => me.Children ?? []))
+      add(c.PersonId, { first: c.FirstName ?? undefined, last: c.LastName ?? undefined, full: c.FullName ?? undefined });
   for (const t of (await ctx.it.messageThreads(100)).Threads?.EntityArray ?? []) {
     for (const p of t.Participants ?? [])
       add(p.PersonId, { first: p.FirstName ?? undefined, last: p.LastName ?? undefined, full: p.FullName ?? undefined });
@@ -151,7 +161,16 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     const role = people.role(r.id);
     const teacherVisible = role === "teacher" && !cfg.redactTeachers;
     if (teacherVisible && r.last) allowed.add(r.last.toLowerCase());
-    const cat = role === "self" ? "own account" : role === "teacher" ? "teacher" : role === "student" ? "student" : "person (role unknown)";
+    const cat =
+      role === "self"
+        ? "own account"
+        : role === "teacher"
+          ? "teacher"
+          : role === "student"
+            ? "student"
+            : role === "child"
+              ? "child"
+              : "person (role unknown)";
     const terms: [string | undefined, string][] = [
       [r.full, `${cat}: full name`],
       [r.first, `${cat}: first name`],
@@ -243,7 +262,7 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
 
   // ---------- Summary ----------
 
-  const roles = { teacher: 0, student: 0, unknown: 0 };
+  const roles = { teacher: 0, student: 0, child: 0, unknown: 0 };
   for (const r of names.values()) {
     const role = people.role(r.id);
     if (role in roles) roles[role as keyof typeof roles]++;
@@ -255,7 +274,7 @@ export async function runSmoke(ctx: AppContext, client: Client, opts: SmokeOptio
     Downloads tested:    ${fileRefs.size}
     Task details:        ${taskSample.length} tested, ${pageTasks} with text from the task page
     Names checked:       ${forbidden.size} terms from ${names.size} people (${ambiguous} ambiguous skipped)
-    Roles detected:      ${roles.teacher} teachers, ${roles.student} students, ${roles.unknown} unknown
+    Roles detected:      ${roles.teacher} teachers, ${roles.student} students, ${roles.unknown} unknown${roles.child ? `, ${roles.child} children` : ""}
     Participant lists:   ${
       Object.entries(participantsStatus)
         .map(([k, v]) => `${k}: ${v}`)
