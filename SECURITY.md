@@ -6,7 +6,8 @@ This server processes personal data of students, classmates and teachers. Redact
 
 | Version | Supported |
 |---|---|
-| 0.1.x | ✅ |
+| 0.3.x | ✅ |
+| < 0.3 | ❌ |
 
 ## Reporting a vulnerability
 

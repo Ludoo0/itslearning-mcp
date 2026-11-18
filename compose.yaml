@@ -8,7 +8,7 @@
 #   ITSL_BASE_URL=https://yourschool.itslearning.com docker compose up -d --build
 #
 # ITSL_BASE_URL can also be set in a .env file next to this file.
-# Pin a version with ITSLEARNING_MCP_VERSION=0.3.0 (default: latest).
+# Pin a version with ITSLEARNING_MCP_VERSION=0.3.1 (default: latest).
 services:
   itslearning-mcp:
     image: ghcr.io/ludoo0/itslearning-mcp:${ITSLEARNING_MCP_VERSION:-latest}
