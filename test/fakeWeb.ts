@@ -3,8 +3,6 @@
  * verified in docs/itslearning-api.md:
  *   SSO URL → ProcessLogin (cookie) → ViewLearningToolElement (iframe) → platform LoginSSO
  *   → resource File/View (DownloadRedirect link) → filerepository (token) → filecache → file
- * Shortcut (FileService): once the resource session cookie exists, DownloadRedirect is called directly
- * with the LearningObjectId/LearningObjectInstanceId from the resources API (see LEARNING_OBJECTS).
  * All names are fictional.
  */
 
@@ -34,38 +32,13 @@ export function makePdf(text: string): Uint8Array {
   return new TextEncoder().encode(out);
 }
 
-/**
- * Learning objects of the fake resource server, keyed by course element id. The ids also appear in the
- * resources API fixtures (test/fixtures.ts → RESOURCES). `file` = path on filerepository/filecache;
- * no file → DownloadRedirect answers with an HTML page (element is not a file).
- */
-export const LEARNING_OBJECTS: Record<number, { lo: number; loi: number; file?: string }> = {
-  7201: { lo: 81201, loi: 91201, file: "f1" },
-  7202: { lo: 81202, loi: 91202 },
-  7203: { lo: 81203, loi: 91203, file: "f3" },
-};
-
-/**
- * How DownloadRedirect behaves for ids whose File/View page was NOT visited in the current session
- * (i.e. the shortcut): "ok" = served with the resource cookie; the other modes simulate failures.
- */
-export type ShortcutMode = "ok" | "html" | "login" | "status" | "network";
-
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 
-export type FakeWeb = {
-  fetch: typeof fetch;
-  stats: { requests: string[]; loginPagesServed: number };
-  expireSessionOnce(): void;
-  setShortcutMode(mode: ShortcutMode): void;
-};
+export type FakeWeb = { fetch: typeof fetch; stats: { requests: string[]; loginPagesServed: number }; expireSessionOnce(): void };
 
 export function createFakeWeb(): FakeWeb {
   const stats = { requests: [] as string[], loginPagesServed: 0 };
   let expireNext = false;
-  let shortcutMode: ShortcutMode = "ok";
-  /** Learning objects whose File/View page was opened (per resource session). */
-  const viewed = new Set<string>();
   const html = (body: string, headers: Record<string, string> = {}) =>
     new Response(`<!DOCTYPE html><html><body>${body}</body></html>`, {
       headers: { "content-type": "text/html; charset=utf-8", ...headers },
@@ -121,40 +94,18 @@ export function createFakeWeb(): FakeWeb {
       });
     }
     if (url.host === "resource.itslearning.com") {
-      const resLogin = () => html('<form><input id="ctl00_ContentPlaceHolder1_Username"></form>');
       if (url.pathname === "/File/View.aspx") {
-        if (!cookie.includes("res=1")) return resLogin();
-        const obj = LEARNING_OBJECTS[Number(url.searchParams.get("ElementId"))];
-        if (!obj) return html("<p>Element not found</p>");
-        viewed.add(`${obj.lo}/${obj.loi}`);
         return html(
-          `<img src="/App_Themes/Default/images/file.gif"><a href="/Proxy/DownloadRedirect.ashx?LearningObjectId=${obj.lo}&amp;LearningObjectInstanceId=${obj.loi}">Download</a>`,
+          '<img src="/App_Themes/Default/images/file.gif"><a href="/Proxy/DownloadRedirect.ashx?LearningObjectId=1&amp;LearningObjectInstanceId=2">Download</a>',
         );
       }
-      if (url.pathname === "/Proxy/DownloadRedirect.ashx") {
-        if (!cookie.includes("res=1")) return resLogin();
-        const lo = Number(url.searchParams.get("LearningObjectId"));
-        const loi = Number(url.searchParams.get("LearningObjectInstanceId"));
-        const key = `${lo}/${loi}`;
-        if (!viewed.has(key)) {
-          // direct call (shortcut) without opening the element first
-          if (shortcutMode === "html") return html("<p>An error occurred.</p>");
-          if (shortcutMode === "login") return resLogin();
-          if (shortcutMode === "status") return new Response("error", { status: 500 });
-          if (shortcutMode === "network") throw new TypeError("fetch failed");
-        }
-        viewed.delete(key);
-        const obj = Object.values(LEARNING_OBJECTS).find((o) => o.lo === lo && o.loi === loi);
-        if (!obj) return new Response("not found", { status: 404 });
-        if (!obj.file) return html("<p>This element has no file.</p>");
-        return redirect(`https://filerepository.itslearning.com/${obj.file}?Token=FILETOKEN&Download=1`);
-      }
+      if (url.pathname === "/Proxy/DownloadRedirect.ashx")
+        return redirect("https://filerepository.itslearning.com/f1?Token=FILETOKEN&Download=1");
     }
     // --- file storage ---
     if (url.host === "filerepository.itslearning.com") {
       const token = url.searchParams.get("Token");
       if (url.pathname === "/f1" && token === "FILETOKEN") return redirect("https://filecache.itslearning.com/c/f1?sign=S3CR3T");
-      if (url.pathname === "/f3" && token === "FILETOKEN") return redirect("https://filecache.itslearning.com/c/f3?sign=S3CR3T");
       if (url.pathname === "/def" && token === "ATTSECRET") return redirect("https://filecache.itslearning.com/c/def?sign=S3CR3T");
       if (url.pathname === "/abc" && token === "IMGSECRET") return file(PNG, "image/png", "inline");
       if (url.pathname === "/asg1" && token === "ASGSECRET") {
@@ -174,13 +125,6 @@ export function createFakeWeb(): FakeWeb {
           'attachment; filename="Worksheet_Jonas_Beispielmann.txt"',
         );
       }
-      if (url.pathname === "/c/f3") {
-        return file(
-          "Solutions for Jonas Beispielmann\nTask 1: 7/8",
-          "text/plain; charset=utf-8",
-          'attachment; filename="Solutions_Jonas.txt"',
-        );
-      }
       if (url.pathname === "/c/def") {
         return file(
           makePdf("Notes by Jonas Beispielmann and Mia Sonnenfeld"),
@@ -197,9 +141,6 @@ export function createFakeWeb(): FakeWeb {
     stats,
     expireSessionOnce: () => {
       expireNext = true;
-    },
-    setShortcutMode: (mode) => {
-      shortcutMode = mode;
     },
   };
 }

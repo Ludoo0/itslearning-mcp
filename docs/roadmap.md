@@ -21,9 +21,6 @@ Since v0.2.0, `itslearning_get_task` reads the instructions from the task's web 
 
 Built from the public API help pages and tested with fictional data only. Findings from a real instance (structure/counts only) are welcome.
 
-### Faster course-file downloads
-After a first full download chain has reached the resource server, `DownloadRedirect.ashx` is called directly with `LearningObjectId`/`LearningObjectInstanceId` from the resources API (`src/files/service.ts`). To verify: several course-file downloads in a row – does the shortcut return the same file as the full chain (≈3 instead of ≈8 requests; failures are logged at `LOG_LEVEL=debug`), and does the fallback work once the web session has expired (shortcut disabled after 3 consecutive failures)?
-
 ### Calendar (`itslearning_list_calendar`)
 `calendar/events/v1?fromDate=…` and `courses/{id}/calendarevents/v1?fromDate=…&toDate=…`. The reference instance has no events. To verify with an instance that uses the calendar: field names (`EventId`/`Id`, `FromDate`, `ToDate`, `EventTitle`, `Description`, `EventType`, `LocationId`, `LocationTitle`), paging, and the redaction of descriptions.
 

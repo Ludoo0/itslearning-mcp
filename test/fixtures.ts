@@ -31,7 +31,7 @@ import { Redactor } from "../src/redaction/redactor";
 import { PersonRegistry } from "../src/redaction/registry";
 import { TeacherDirectory } from "../src/redaction/teachers";
 import { WebBrowser } from "../src/websession/browser";
-import { createFakeWeb, type FakeWeb, LEARNING_OBJECTS } from "./fakeWeb";
+import { createFakeWeb, type FakeWeb } from "./fakeWeb";
 
 // ---------- People (all fictional) ----------
 // 1001 Jonas Beispielmann – the account owner
@@ -384,8 +384,8 @@ export const RESOURCES: Record<number, ApiResource> = {
     CourseId: 11,
     ContentUrl: VIEW(7201),
     Homework: true,
-    LearningObjectId: LEARNING_OBJECTS[7201]!.lo,
-    LearningObjectInstanceId: LEARNING_OBJECTS[7201]!.loi,
+    LearningObjectId: 0, // always 0 at a real instance
+    LearningObjectInstanceId: 0, // always 0 at a real instance
   },
   7202: {
     ElementId: 7202,
@@ -394,8 +394,8 @@ export const RESOURCES: Record<number, ApiResource> = {
     LearningToolId: 5010,
     CourseId: 11,
     ContentUrl: VIEW(7202),
-    LearningObjectId: LEARNING_OBJECTS[7202]!.lo,
-    LearningObjectInstanceId: LEARNING_OBJECTS[7202]!.loi,
+    LearningObjectId: 0, // always 0 at a real instance
+    LearningObjectInstanceId: 0, // always 0 at a real instance
   },
   7203: {
     ElementId: 7203,
@@ -404,8 +404,8 @@ export const RESOURCES: Record<number, ApiResource> = {
     CourseId: 11,
     ContentUrl: VIEW(7203),
     Path: "Worksheets/Solutions",
-    LearningObjectId: LEARNING_OBJECTS[7203]!.lo,
-    LearningObjectInstanceId: LEARNING_OBJECTS[7203]!.loi,
+    LearningObjectId: 0, // always 0 at a real instance
+    LearningObjectInstanceId: 0, // always 0 at a real instance
   },
   7101: { ElementId: 7101, Title: "Reading list", ElementType: "LearningToolElement", CourseId: 12, ContentUrl: VIEW(7201) },
 };

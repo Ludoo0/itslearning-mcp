@@ -1,6 +1,6 @@
 # itslearning MCP server – specification (v0.1)
 
-As of 2026-11-18 · Status: implemented (v0.2.0; calendar, planner, experimental parent accounts, more redaction languages and the download shortcut unreleased)
+As of 2026-11-18 · Status: implemented (v0.2.0; calendar, planner, experimental parent accounts, more redaction languages unreleased)
 Based on: [`itslearning-api.md`](./itslearning-api.md) (verified endpoints, ✅ = tested, ⏳ = still open) · Open items: [`roadmap.md`](./roadmap.md)
 
 ---
@@ -171,7 +171,7 @@ Details:
 
 | fileRef | Source | Resolution |
 |---|---|---|
-| `e_<elementId>` | course element | `courses/resources/{id}/v1` → SSO → web session → (iframes) → `DownloadRedirect` (shortcut, see below) |
+| `e_<elementId>` | course element | `courses/resources/{id}/v1` → SSO → web session → (iframes) → `DownloadRedirect` |
 | `a_<elementId>_<fileId>` | task attachment | `assignments/{id}/files/{fileId}/v1` (302) ⏳ |
 | `m_<threadId>_<messageId>` | message attachment | `AttachmentUrl` (remembered or re-read from the thread) |
 | `i_<courseId>_<bulletinId>_<n>` | bulletin image | `OriginalFileUrl` (remembered or re-read from the bulletins) |
@@ -185,7 +185,6 @@ Secret URLs stay inside the `FileService`. A hand-crafted fileRef grants no extr
 - Elements that are not files (links, notes, tests) → `kind: "page"` with the redacted page text, **never a URL**.
 - **Before** a download the server registers everyone who might appear in the document: course participants (`courses/{id}/participants/v1`, best effort) or thread participants.
 - Disk cache in `DATA_DIR/files` (24 h, max. 500 MB, oldest first).
-- **Download shortcut (course elements, unverified):** once a `DownloadRedirect` link on an itslearning host has yielded a file in the current web session, its origin is remembered and later downloads call `<origin>/Proxy/DownloadRedirect.ashx?LearningObjectId=…&LearningObjectInstanceId=…` directly with the ids from the resources API (≈3 instead of ≈8 requests, no `sso/url/v1` call). Only a file response counts as success; anything else falls back silently to the full chain, so the result is the same. After 3 consecutive failures the shortcut is no longer tried; a rebuilt web session forgets the origin.
 - `DOWNLOAD_DIR`: the file is additionally stored as `<fileRef>_<redacted name>` (`savedTo`).
 - **Known limit:** file/image *content* (blob) is not redacted – only extracted text is. Tool descriptions say so.
 

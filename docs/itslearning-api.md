@@ -174,7 +174,7 @@ The API provides no file URL, so the path goes through the web UI. A cookie jar 
 ```
 
 Observations:
-- `LearningObjectId` and `LearningObjectInstanceId` from the `DownloadRedirect` link are **also in the resources API**. **Shortcut implemented** ⏳ (unverified against a real instance): once a `DownloadRedirect` link has yielded a file in the current web session, later downloads call `<resource origin>/Proxy/DownloadRedirect.ashx` directly with the IDs from the API (≈3 instead of ≈8 requests, no `sso/url/v1` call). Any non-file response falls back silently to the full chain; after 3 consecutive failures the shortcut is disabled.
+- The resources API has the fields `LearningObjectId` and `LearningObjectInstanceId`, but at the reference instance they are **always `0`** – in the folder listings and in the element detail (checked for 107 file elements). Calling `DownloadRedirect.ashx` directly with the ids from the API is therefore not possible; the ids only exist in the `DownloadRedirect` link on the `File/View` page. ✅
 - The session URLs (`MobileAppLoginSso`, `ProcessLogin`, `platform…/LoginSSO.aspx`, `File/View.aspx`) carry signatures as well as **`FirstName`, `LastName`, `Email`, `UserName`, `PersonId` as query parameters**. They must never be logged or handed to agents.
 - About 8 requests per file → reuse the session and cache downloads locally.
 - Pages that are not files (links, notes, embedded tools) can contain launch parameters of external learning tools as **URL-encoded JSON including `PersonId`** – these must be stripped from page text.
@@ -268,7 +268,6 @@ Children are registered with the role `child` and teachers from `Teachers[]` as 
 - [x] Course participants readable for a student account
 - [ ] Task attachments (`/assignments/{id}/files/{fileId}/v1`): no test data available yet
 - [ ] `LearningToolId` mapping (file vs. link vs. page vs. test)
-- [ ] `DownloadRedirect.ashx` shortcut using IDs from the API (implemented with fallback, unverified)
 - [ ] Calendar and planner with real data (tools implemented)
 - [ ] Parent account (`children/…`, experimental support implemented)
 
